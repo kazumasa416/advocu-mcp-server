@@ -51,7 +51,7 @@ npm run verify:build
 
 - `npm run build:clean` は、`dist/` と差分ビルドの記録（`tsconfig.tsbuildinfo`）を消してからビルドし直します。
 - `npm run verify:build` は、ビルドしたサーバーをダミーのトークンで起動し、ツール一覧と説明書の読み込みを確認します。Advocu の API には接続しません。最後に `✅ verification passed` と表示されれば成功です。
-- `npm ci` の途中で警告が表示されることがありますが、上の 2 つのコマンドが成功すれば問題ありません。
+- `npm ci` やビルドの途中で警告が表示されることがあります（確認時にも表示されました）。エラーで終了した場合や、`✅ verification passed` が表示されない場合は、先へ進まず内容を確認してください。
 
 ### 2. Advocu のトークンを用意する
 

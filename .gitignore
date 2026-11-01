@@ -69,3 +69,6 @@ logs/
 .cache/
 .parcel-cache/
 .eslintcache
+
+# Captured MVP portal traffic (may contain tokens)
+captured-api-calls.json
