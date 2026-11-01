@@ -177,6 +177,8 @@ export class UnifiedActivityReportingServer {
   private readonly gdeBaseUrl: string;
   private readonly gdeEnabled: boolean;
   private readonly pendingGDEUpdates = new Map<string, PendingGDEUpdate>();
+  private readonly gdeActivitiesBeingUpdated = new Set<string>();
+  private readonly gdeUpdateGenerations = new Map<string, number>();
 
   // MVP configuration
   private readonly mvpAccessToken: string | null;
@@ -949,8 +951,13 @@ export class UnifiedActivityReportingServer {
   /**
    * Previews an update, or applies a previewed one. Applying re-reads the
    * activity and refuses to send if it changed since the preview. The reference
-   * documents no conditional update, so a change made between that read and the
-   * PATCH cannot be detected.
+   * documents no conditional update, so a change made outside this server
+   * between that read and the PATCH cannot be detected.
+   *
+   * Within this server, applying locks the activity and invalidates its other
+   * previews before the first await, so only one update of an activity can run
+   * at a time. A preview that started earlier sees the new generation and
+   * returns no id, because what it read may already be out of date.
    */
   private async updateGDEActivity({ activityId, data, apply, confirmationId }: ActivityUpdateRequest) {
     if (typeof activityId !== "string" || !activityId) {
@@ -962,6 +969,13 @@ export class UnifiedActivityReportingServer {
     if ("metrics" in data && (!isPlainObject(data.metrics) || Object.keys(data.metrics).length === 0)) {
       return this.gdeErrorResult("❌ Nothing was sent. metrics must be an object with at least one value.");
     }
+
+    if (this.gdeActivitiesBeingUpdated.has(activityId)) {
+      return this.gdeErrorResult(
+        "❌ Nothing was sent. Another update of this activity is in progress. After it finishes, call without apply to preview again.",
+      );
+    }
+    const generation = this.gdeUpdateGenerations.get(activityId) ?? 0;
 
     let pending: PendingGDEUpdate | undefined;
     if (apply === true) {
@@ -976,10 +990,16 @@ export class UnifiedActivityReportingServer {
           "❌ Nothing was sent. activityId or data differ from the preview of this confirmationId. Call without apply to preview the new content.",
         );
       }
-      // Used up before the first await, so that parallel calls with this id
-      // cannot get past the check above. A failure from here on, including one
-      // where the stored state is uncertain, goes through a new preview.
-      this.pendingGDEUpdates.delete(confirmationId as string);
+      // Done before the first await, so that parallel calls cannot get past the
+      // checks above. A failure from here on, including one where the stored
+      // state is uncertain, goes through a new preview.
+      this.gdeActivitiesBeingUpdated.add(activityId);
+      this.gdeUpdateGenerations.set(activityId, generation + 1);
+      for (const [id, other] of this.pendingGDEUpdates) {
+        if (other.activityId === activityId) {
+          this.pendingGDEUpdates.delete(id);
+        }
+      }
     }
 
     try {
@@ -988,6 +1008,12 @@ export class UnifiedActivityReportingServer {
         return this.gdeErrorResult(found.errorMessage);
       }
       const { activity } = found;
+
+      if (!pending && (this.gdeUpdateGenerations.get(activityId) ?? 0) !== generation) {
+        return this.gdeErrorResult(
+          "❌ No preview was created because the activity was being updated at the same time. Call without apply to preview it again.",
+        );
+      }
 
       const updatable = getGDEUpdatableFields(activity.type);
       if (!updatable) {
@@ -1089,6 +1115,10 @@ export class UnifiedActivityReportingServer {
       if (error instanceof McpError) throw error;
       const errorMsg = this.getErrorMessage(error);
       throw new McpError(ErrorCode.InternalError, `❌ Failed to update GDE activity:\n\n${errorMsg}`);
+    } finally {
+      if (pending) {
+        this.gdeActivitiesBeingUpdated.delete(activityId);
+      }
     }
   }
 

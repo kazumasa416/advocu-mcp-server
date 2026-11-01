@@ -29,7 +29,11 @@ const makeActivity = (activityId, type, data) => ({
 let article;
 let patches;
 let patchStatus;
+let patchMode;
 let listStatus;
+let heldPatchActivity;
+let heldListPage;
+let releaseHeld;
 let server;
 let child;
 let nextId = 1;
@@ -47,6 +51,14 @@ const failServer = (reason) => {
     reject(serverFailure);
   }
   waiting.clear();
+};
+
+const waitUntil = async (condition, description) => {
+  const deadline = Date.now() + 2000;
+  while (!condition()) {
+    assert.ok(Date.now() < deadline, `timed out waiting for ${description}`);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
 };
 
 const filler = Array.from({ length: 100 }, (_, i) => makeActivity(`filler-${i}`, "workshop", { title: "Filler" }));
@@ -121,12 +133,30 @@ before(async () => {
           return;
         }
         const page = Number(url.searchParams.get("page") ?? 0);
-        send(200, JSON.stringify({ content: page === 0 ? filler : page === 1 ? secondPage() : [] }));
+        // The content is read on arrival, so a held response carries the old state
+        const content = JSON.stringify({ content: page === 0 ? filler : page === 1 ? secondPage() : [] });
+        if (heldListPage === page) {
+          heldListPage = undefined;
+          releaseHeld = () => send(200, content);
+          return;
+        }
+        send(200, content);
         return;
       }
       if (req.method === "PATCH") {
         patches.push({ url: req.url, body, authorization: req.headers.authorization });
-        send(patchStatus, patchStatus === 200 ? JSON.stringify({ updated: true }) : "patch failed");
+        if (patchMode === "drop") {
+          req.socket.destroy();
+          return;
+        }
+        const respond = () =>
+          send(patchStatus, patchStatus === 200 ? JSON.stringify({ updated: true }) : "patch failed");
+        if (heldPatchActivity && req.url === `/activities/${heldPatchActivity}`) {
+          heldPatchActivity = undefined;
+          releaseHeld = respond;
+          return;
+        }
+        respond();
         return;
       }
       send(404, "not found");
@@ -190,7 +220,11 @@ beforeEach(() => {
   });
   patches = [];
   patchStatus = 200;
+  patchMode = "normal";
   listStatus = 200;
+  heldPatchActivity = undefined;
+  heldListPage = undefined;
+  releaseHeld = undefined;
 });
 
 test("the preview sends nothing and shows the exact request body", async () => {
@@ -398,6 +432,176 @@ test("a confirmationId is used up even when the re-read fails", async () => {
   const retry = await call({ activityId: "article-1", data, apply: true, confirmationId: id });
   assert.equal(retry.isError, true);
   assert.equal(patches.length, 0);
+});
+
+test("parallel applies with different ids for one activity send one PATCH", async () => {
+  const data = { title: "New title" };
+  const first = await preview("article-1", data);
+  const second = await preview("article-1", data);
+  const results = await Promise.all([
+    call({ activityId: "article-1", data, apply: true, confirmationId: first.id }),
+    call({ activityId: "article-1", data, apply: true, confirmationId: second.id }),
+  ]);
+  assert.equal(patches.length, 1);
+  assert.equal(results.filter((result) => !result.isError).length, 1);
+});
+
+test("applying invalidates the other ids of the activity", async () => {
+  const data = { title: "New title" };
+  const first = await preview("article-1", data);
+  const second = await preview("article-1", { title: "Other title" });
+  await call({ activityId: "article-1", data, apply: true, confirmationId: first.id });
+  const stale = await call({
+    activityId: "article-1",
+    data: { title: "Other title" },
+    apply: true,
+    confirmationId: second.id,
+  });
+  assert.equal(stale.isError, true);
+  assert.equal(patches.length, 1);
+});
+
+test("a failed apply also invalidates the other ids of the activity", async () => {
+  const data = { title: "New title" };
+  const first = await preview("article-1", data);
+  const second = await preview("article-1", data);
+  patchStatus = 500;
+  await call({ activityId: "article-1", data, apply: true, confirmationId: first.id });
+  patchStatus = 200;
+  const stale = await call({ activityId: "article-1", data, apply: true, confirmationId: second.id });
+  assert.equal(stale.isError, true);
+  assert.equal(patches.length, 1);
+});
+
+test("a refused apply does not use up the id or lock the activity", async () => {
+  const data = { title: "New title" };
+  const { id } = await preview("article-1", data);
+  const refused = await call({ activityId: "article-1", data: { title: "Other" }, apply: true, confirmationId: id });
+  assert.equal(refused.isError, true);
+  const applied = await call({ activityId: "article-1", data, apply: true, confirmationId: id });
+  assert.equal(applied.isError, false, applied.text);
+  assert.equal(patches.length, 1);
+});
+
+test("a preview during an update is refused, and works again afterwards", async () => {
+  const data = { title: "New title" };
+  const { id } = await preview("article-1", data);
+  heldPatchActivity = "article-1";
+  const applying = call({ activityId: "article-1", data, apply: true, confirmationId: id });
+  await waitUntil(() => releaseHeld, "the PATCH");
+
+  const during = await call({ activityId: "article-1", data: { title: "Other title" } });
+  assert.equal(during.isError, true);
+  assert.match(during.text, /in progress/);
+  assert.doesNotMatch(during.text, /confirmationId:/);
+
+  releaseHeld();
+  assert.equal((await applying).isError, false);
+  await preview("article-1", { title: "Other title" });
+});
+
+test("a preview that started before an update returns no id when it ends during the update", async () => {
+  const data = { title: "New title" };
+  const { id } = await preview("article-1", data);
+  heldListPage = 1;
+  const previewing = call({ activityId: "article-1", data: { title: "Other title" } });
+  await waitUntil(() => releaseHeld, "the preview's read");
+  const finishPreview = releaseHeld;
+  releaseHeld = undefined;
+
+  heldPatchActivity = "article-1";
+  const applying = call({ activityId: "article-1", data, apply: true, confirmationId: id });
+  await waitUntil(() => releaseHeld, "the PATCH");
+
+  finishPreview();
+  const previewed = await previewing;
+  assert.equal(previewed.isError, true);
+  assert.doesNotMatch(previewed.text, /confirmationId:/);
+
+  releaseHeld();
+  assert.equal((await applying).isError, false);
+});
+
+test("a preview that started before an update returns no id when it ends after the update", async () => {
+  const data = { title: "New title" };
+  const { id } = await preview("article-1", data);
+  heldListPage = 1;
+  const previewing = call({ activityId: "article-1", data: { title: "Other title" } });
+  await waitUntil(() => releaseHeld, "the preview's read");
+
+  const applied = await call({ activityId: "article-1", data, apply: true, confirmationId: id });
+  assert.equal(applied.isError, false, applied.text);
+  assert.equal(patches.length, 1);
+
+  releaseHeld();
+  const previewed = await previewing;
+  assert.equal(previewed.isError, true);
+  assert.doesNotMatch(previewed.text, /confirmationId:/);
+});
+
+test("other activities are not blocked during an update", async () => {
+  const data = { title: "New title" };
+  const { id } = await preview("article-1", data);
+  heldPatchActivity = "article-1";
+  const applying = call({ activityId: "article-1", data, apply: true, confirmationId: id });
+  await waitUntil(() => releaseHeld, "the PATCH");
+
+  const otherData = { title: "Later title" };
+  const other = await preview("late-1", otherData);
+  const otherApplied = await call({ activityId: "late-1", data: otherData, apply: true, confirmationId: other.id });
+  assert.equal(otherApplied.isError, false, otherApplied.text);
+
+  releaseHeld();
+  assert.equal((await applying).isError, false);
+  assert.equal(patches.length, 2);
+});
+
+const applyAgain = async () => {
+  const data = { title: "Second try" };
+  const { id } = await preview("article-1", data);
+  const result = await call({ activityId: "article-1", data, apply: true, confirmationId: id });
+  assert.equal(result.isError, false, result.text);
+};
+
+test("the lock is released after a failed PATCH", async () => {
+  const data = { title: "New title" };
+  const { id } = await preview("article-1", data);
+  patchStatus = 500;
+  assert.equal((await call({ activityId: "article-1", data, apply: true, confirmationId: id })).isError, true);
+  patchStatus = 200;
+  await applyAgain();
+});
+
+test("the lock is released after a failed re-read", async () => {
+  const data = { title: "New title" };
+  const { id } = await preview("article-1", data);
+  listStatus = 500;
+  assert.equal((await call({ activityId: "article-1", data, apply: true, confirmationId: id })).isError, true);
+  listStatus = 200;
+  await applyAgain();
+  assert.equal(patches.length, 1);
+});
+
+test("the lock is released when the activity changed after the preview", async () => {
+  const data = { title: "New title" };
+  const { id } = await preview("article-1", data);
+  article.updatedDate = "2026-02-02T00:00:00Z";
+  assert.equal((await call({ activityId: "article-1", data, apply: true, confirmationId: id })).isError, true);
+  await applyAgain();
+  assert.equal(patches.length, 1);
+});
+
+test("the lock is released when the connection fails", async () => {
+  const data = { title: "New title" };
+  const { id } = await preview("article-1", data);
+  patchMode = "drop";
+  const { error } = await rpc("tools/call", {
+    name: "update_gde_activity",
+    arguments: { activityId: "article-1", data, apply: true, confirmationId: id },
+  });
+  assert.ok(error, "a dropped connection is reported as an error");
+  patchMode = "normal";
+  await applyAgain();
 });
 
 for (const status of [400, 401, 404, 429, 500]) {

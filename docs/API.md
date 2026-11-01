@@ -490,14 +490,18 @@ An update takes two calls:
 
 Nothing is sent when:
 
-- `apply: true` comes without the id of a preview, including an id that was already used. An id is used up by the
-  first call that matches its preview, even if that call then fails, so parallel calls with one id send one request
-  and a retry needs a new preview. Previews are kept in memory, so they do not survive a server restart.
+- `apply: true` comes without the id of a preview, including an id that was already used. The first call that matches
+  its preview uses up the id and invalidates the other previews of that activity, even if the call then fails, so a
+  retry needs a new preview. Previews are kept in memory, so they do not survive a server restart.
+- Another update of the same activity is in progress. Updates of other activities are not affected.
 - `activityId` or `data` differ from that preview. Object key order does not count as a difference.
 - The activity differs from the preview, including only its `updatedDate`.
 
-The reference documents no conditional update, so a change made in the short time between that last read and the
-`PATCH` cannot be detected, and the `PATCH` would overwrite the fields it sends.
+A preview returns no id while the activity is being updated, or if an update started while the preview was reading it.
+
+These checks cover one server process. The reference documents no conditional update, so a change made elsewhere (the
+portal, another server process) in the short time between that last read and the `PATCH` cannot be detected, and the
+`PATCH` would overwrite the fields it sends.
 
 To keep existing tags, copy them from `data.tags` in `list_gde_activities` and add the new ones. The preview lists the
 tags the update would remove.
