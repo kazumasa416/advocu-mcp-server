@@ -15,9 +15,11 @@ import {
   McpError,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { GDE_TOOL_ENDPOINTS, GDE_TOOLS } from "./gdeTools.js";
+import { GDE_LIST_ACTIVITIES_TOOL, GDE_TOOL_ENDPOINTS, GDE_TOOLS } from "./gdeTools.js";
 // GDE imports
 import type {
+  ActivityListQuery,
+  ActivityListResponse,
   ContentCreationDraft,
   GooglerInteractionDraft,
   MentoringDraft,
@@ -191,6 +193,7 @@ export class UnifiedActivityReportingServer {
             name: tool.name.replace(/^submit_/, "submit_gde_"),
             description: tool.description.replace(/ draft$/, " draft to the Google GDE program (Advocu)"),
           })),
+          GDE_LIST_ACTIVITIES_TOOL,
         );
       }
 
@@ -374,6 +377,16 @@ export class UnifiedActivityReportingServer {
         }
 
         // GDE tools
+        if (name === GDE_LIST_ACTIVITIES_TOOL.name) {
+          if (!this.gdeEnabled) {
+            throw new McpError(
+              ErrorCode.InvalidRequest,
+              "GDE tools are not enabled. Please configure GDE credentials.",
+            );
+          }
+          return await this.listGDEActivities((args ?? {}) as ActivityListQuery);
+        }
+
         if (name.startsWith("submit_gde_")) {
           if (!this.gdeEnabled) {
             throw new McpError(
@@ -703,6 +716,77 @@ export class UnifiedActivityReportingServer {
         ErrorCode.InternalError,
         `❌ Failed to submit GDE activity:\n\n${errorMsg}\n\nEndpoint: ${endpoint}`,
       );
+    }
+  }
+
+  private async listGDEActivities(query: ActivityListQuery) {
+    const params = new URLSearchParams();
+    for (const key of ["from", "to", "updatedAfter", "page", "size"] as const) {
+      const value = query[key];
+      if (value !== undefined && value !== null && value !== "") {
+        params.set(key, String(value));
+      }
+    }
+    const queryString = params.toString();
+    const url = `${this.gdeBaseUrl}/activities${queryString ? `?${queryString}` : ""}`;
+
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.gdeAccessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage: string;
+
+        if (response.status === 401) {
+          errorMessage =
+            "❌ GDE authentication failed. Your ADVOCU_ACCESS_TOKEN may be expired or invalid.\n\nPlease check your Advocu access token configuration.";
+        } else if (response.status === 400) {
+          errorMessage = `❌ GDE API rejected the request:\n\n${errorText}\n\nPlease check:\n- Dates are UTC date-time strings (e.g. 2026-01-01T00:00:00Z)\n- page is 0 or more and size is between 1 and 100`;
+        } else if (response.status === 429) {
+          errorMessage = "⏱️ GDE API rate limit exceeded (30 requests/minute). Please wait and try again.";
+        } else {
+          errorMessage = `❌ GDE API error (${response.status}):\n\n${errorText}`;
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: errorMessage,
+            },
+          ],
+        };
+      }
+
+      const result = (await response.json()) as ActivityListResponse;
+      const count = Array.isArray(result.content) ? result.content.length : 0;
+      const page = query.page ?? 0;
+      const size = query.size ?? 10;
+      const pageNote =
+        count === 0
+          ? "No activities on this page, so there are no more pages."
+          : count < size
+            ? "The page is not full, so this is probably the last page."
+            : `There may be more activities: request page ${page + 1} to continue.`;
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `📋 GDE activities: page ${page}, ${count} item(s) (page size ${size}). ${pageNote}\n\n${JSON.stringify(result, null, 2)}`,
+          },
+        ],
+      };
+    } catch (error) {
+      if (error instanceof McpError) throw error;
+      const errorMsg = this.getErrorMessage(error);
+      throw new McpError(ErrorCode.InternalError, `❌ Failed to list GDE activities:\n\n${errorMsg}`);
     }
   }
 

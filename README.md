@@ -254,7 +254,7 @@ Just talk to Claude naturally! Here are examples:
 | `submit_mvp_blog` | Blog posts, articles | views, subscribers, tech area |
 | `submit_mvp_speaking` | Conference talks, presentations | attendees, sessions, tech area |
 
-### Google GDE Tools (7)
+### Google GDE Tools (8)
 
 | Tool | Description |
 |------|-------------|
@@ -265,6 +265,7 @@ Just talk to Claude naturally! Here are examples:
 | `submit_gde_product_feedback` | Product feedback |
 | `submit_gde_googler_interaction` | Google employee interactions |
 | `submit_gde_story` | Success stories |
+| `list_gde_activities` | List one page of submitted activities, filtered by submission or update date |
 
 ---
 

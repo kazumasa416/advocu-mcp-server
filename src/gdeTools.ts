@@ -487,3 +487,43 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
     },
   },
 ];
+
+/**
+ * Tool for GET /activities. Kept apart from GDE_TOOLS because it is not an
+ * activity-draft submission and is only exposed by the unified server.
+ */
+export const GDE_LIST_ACTIVITIES_TOOL: GDEToolDefinition = {
+  name: "list_gde_activities",
+  description:
+    "List one page of your submitted Google GDE activities (Advocu), sorted by submission date in ascending order. " +
+    "Filters apply to submission date and update date, not to the activity date. " +
+    "The API returns no totals: an empty page means there are no more activities.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      from: {
+        type: "string",
+        description: "Filter by submission date from (inclusive), UTC date-time, e.g. 2026-01-01T00:00:00Z",
+      },
+      to: {
+        type: "string",
+        description: "Filter by submission date to (exclusive), UTC date-time, e.g. 2026-01-01T00:00:00Z",
+      },
+      updatedAfter: {
+        type: "string",
+        description: "Filter activities updated after this date, UTC date-time, e.g. 2026-01-01T00:00:00Z",
+      },
+      page: {
+        type: "integer",
+        minimum: 0,
+        description: "Page number, starting at 0 (API default 0)",
+      },
+      size: {
+        type: "integer",
+        minimum: 1,
+        maximum: 100,
+        description: "Page size, 1-100 (API default 10)",
+      },
+    },
+  },
+};

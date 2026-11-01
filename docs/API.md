@@ -417,14 +417,40 @@ This endpoint has no `activityDate` field.
 
 ------
 
+## GET /activities
+
+Returns one page of your submitted activities, sorted by submission date in ascending order.
+Used by the `list_gde_activities` tool (unified server only).
+
+| Query parameter | Type    | Description                                                        | Default |
+| --------------- | ------- | ------------------------------------------------------------------ | ------- |
+| from            | string  | Filter by submission date from (inclusive), e.g. 2026-01-01T00:00:00Z | -     |
+| to              | string  | Filter by submission date to (exclusive), e.g. 2026-01-01T00:00:00Z   | -     |
+| updatedAfter    | string  | Filter activities updated after this date, e.g. 2026-01-01T00:00:00Z  | -     |
+| page            | integer | Page number (cannot be negative)                                   | 0       |
+| size            | integer | Page size (1-100)                                                  | 10      |
+
+Response: `{ "content": [Activity] }`. The API returns no totals; an empty `content` array means there are no more
+pages. The filters apply to the submission and update dates, not to the activity date.
+
+| Activity field | Type   | Description                                                                      |
+| -------------- | ------ | -------------------------------------------------------------------------------- |
+| type           | string | One of 9 values: the 7 draft types plus `github-repository` and `youtube-video` |
+| data           | object | Activity fields; the shape depends on `type`                                     |
+| submissionDate | string | e.g. 2026-01-01T00:00:00Z                                                        |
+| updatedDate    | string | e.g. 2026-01-01T00:00:00Z                                                        |
+| archiveDate    | string | Optional, e.g. 2026-01-01T00:00:00Z                                              |
+| activityId     | string | -                                                                                |
+
+`data` differs from the draft request bodies: it can use any of 331 tags (including retired ones), allows longer
+descriptions (up to 20000 characters, with `*_plain_text` variants) and includes fields such as `city`, `countryIso`
+and `imageUrl` that the draft endpoints do not accept.
+
+------
+
 ## Not Yet Supported by the MCP Tools
 
 The reference also documents the following, which this server does not implement yet:
 
-- `GET /activities` — pageable list of submitted activities, sorted by submission date (ascending). Query parameters:
-  `from`, `to` (submission date range), `updatedAfter`, `page` (default 0), `size` (1-100, default 10).
 - `PATCH /activities/{activityId}` — update an existing activity.
-- The list response can contain two activity types that have no draft endpoint: `github-repository` and
-  `youtube-video`. A future list tool needs to handle them alongside the 7 draft types.
-- Activities returned by the list/update endpoints accept a wider set of 331 tags (including retired ones), and include
-  fields such as `city`, `countryIso` and `imageUrl` that the draft endpoints do not accept.
+- Fetching every page automatically: `list_gde_activities` returns one page per call.

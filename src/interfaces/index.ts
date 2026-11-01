@@ -4,6 +4,7 @@
  */
 
 export type { ActivityDraftBase } from "./ActivityDraftBase.js";
+export type { Activity, ActivityListQuery, ActivityListResponse } from "./ActivityList.js";
 export type { ContentCreationDraft } from "./ContentCreationDraft.js";
 export type { GooglerInteractionDraft } from "./GooglerInteractionDraft.js";
 export type { MentoringDraft } from "./MentoringDraft.js";

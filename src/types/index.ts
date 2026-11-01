@@ -3,6 +3,7 @@
  * @description Exports all enums for easy importing
  */
 
+export { ActivityType } from "./ActivityType.js";
 export { ContentType } from "./ContentType.js";
 export { Country } from "./Country.js";
 export { EventFormat } from "./EventFormat.js";
