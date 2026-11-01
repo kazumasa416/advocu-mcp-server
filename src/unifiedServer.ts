@@ -383,7 +383,8 @@ export class UnifiedActivityReportingServer {
           }
           const endpoint = GDE_TOOL_ENDPOINTS[name.replace(/^submit_gde_/, "submit_")];
           if (endpoint) {
-            return await this.submitGDEActivityDraft(endpoint, args as unknown as GDEActivityDraft);
+            // Every draft field is optional, so a call without arguments still sends an empty JSON object
+            return await this.submitGDEActivityDraft(endpoint, (args ?? {}) as unknown as GDEActivityDraft);
           }
         }
 
@@ -681,6 +682,7 @@ export class UnifiedActivityReportingServer {
               text: errorMessage,
             },
           ],
+          isError: true,
         };
       }
 

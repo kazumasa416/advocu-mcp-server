@@ -73,7 +73,8 @@ export class ActivityReportingServer {
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
+      // Every draft field is optional, so a call without arguments still sends an empty JSON object
+      const { name, arguments: args = {} } = request.params;
 
       try {
         switch (name) {
@@ -122,6 +123,7 @@ export class ActivityReportingServer {
       type: string;
       text: string;
     }>;
+    isError?: boolean;
   }> {
     const url = `${this.baseUrl}/activity-drafts/${endpoint}`;
 
@@ -158,6 +160,7 @@ export class ActivityReportingServer {
               text: errorMessage,
             },
           ],
+          isError: true,
         };
       }
 
