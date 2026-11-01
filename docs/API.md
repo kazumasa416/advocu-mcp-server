@@ -448,9 +448,44 @@ and `imageUrl` that the draft endpoints do not accept.
 
 ------
 
+## PATCH /activities/{activityId}
+
+Updates a submitted activity. Used by the `update_gde_activity` tool (unified server only).
+
+Request body: `{ "data": { ...fields } }`. Every field is optional. The fields for each activity type have the same
+names and limits as its draft fields above, except `tags`, which accepts the 331 values of the list response. The
+reference defines updates for the 7 draft types only, not for `github-repository` or `youtube-video`. `imageUrl`,
+`city` and `cityPlaceId` appear in responses but are not update fields.
+
+Response: the updated activity, in the same shape as an item of `GET /activities`.
+
+The reference does not say how omitted fields are treated. In one request that sent only `metrics` for a
+`content-creation` activity, the other fields stayed the same and only `updatedDate` changed.
+
+Not verified:
+
+- Omitted fields on the other 6 activity types.
+- Whether `tags` replaces or extends the stored list. The tool asks for the complete list so that either result is
+  the intended one.
+- Whether the `eventFormat` conditions on `country` and `inPersonAttendees` also consider the stored `eventFormat`.
+- What is stored when plain text is sent for a field that is returned as HTML, such as `description`.
+
+### `update_gde_activity`
+
+| Argument   | Type    | Description                                                                 |
+| ---------- | ------- | --------------------------------------------------------------------------- |
+| activityId | string  | Activity id from `list_gde_activities`                                      |
+| data       | object  | Fields to change. Only these fields are sent                                |
+| apply      | boolean | Send the update. When omitted or false, the tool only previews the changes |
+
+The API cannot read a single activity, so the tool finds it by walking `GET /activities` (one request per 100
+activities). It then checks the fields against the activity type and shows the current and new values. Nothing is
+sent if a field does not apply to the type or if all values already match.
+
+------
+
 ## Not Yet Supported by the MCP Tools
 
 The reference also documents the following, which this server does not implement yet:
 
-- `PATCH /activities/{activityId}` — update an existing activity.
 - Fetching every page automatically: `list_gde_activities` returns one page per call.

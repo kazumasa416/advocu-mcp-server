@@ -53,7 +53,7 @@ npm run postrelease       # Pushes tags and publishes to npm
    - Initializes MCP server with stdio transport
    - Validates environment variables for both GDE and MVP (at least one must be configured)
    - Registers tools for enabled integrations:
-     - 7 GDE activity-draft tools and 1 activity list tool (if `ADVOCU_ACCESS_TOKEN` is set; the list tool is unified-server only)
+     - 7 GDE activity-draft tools plus activity list and update tools (if `ADVOCU_ACCESS_TOKEN` is set; the list and update tools are unified-server only)
      - 3+ MVP activity tools (if `MVP_ACCESS_TOKEN` and `MVP_USER_PROFILE_ID` are set)
    - Routes tool calls to the appropriate API (GDE or MVP)
 3. **server.ts** - Legacy GDE-only server (kept for backwards compatibility)
@@ -102,7 +102,7 @@ The codebase uses a type-safe, inheritance-based structure for activity drafts:
 
 #### GDE (Advocu) API
 - Base URL: `https://api.advocu.com/personal-api/v1/gde` (configurable via `ADVOCU_API_URL`)
-- Endpoints: `POST /activity-drafts/{activity-type}`, `GET /activities`
+- Endpoints: `POST /activity-drafts/{activity-type}`, `GET /activities`, `PATCH /activities/{activityId}`
 - Authentication: Bearer token via `ADVOCU_ACCESS_TOKEN`
 - Rate limit: 30 requests per minute (handled with 429 error detection)
 
@@ -124,6 +124,7 @@ The codebase uses a type-safe, inheritance-based structure for activity drafts:
 6. `submit_gde_googler_interaction`
 7. `submit_gde_story`
 8. `list_gde_activities` - One page of submitted activities (`GET /activities`), unified server only
+9. `update_gde_activity` - Update a submitted activity (`PATCH /activities/{activityId}`), previews unless `apply: true`, unified server only
 
 #### MVP Tools (when `MVP_ACCESS_TOKEN` and `MVP_USER_PROFILE_ID` are set)
 1. `submit_mvp_video` - For videos, webinars, livestreams

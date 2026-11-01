@@ -527,3 +527,145 @@ export const GDE_LIST_ACTIVITIES_TOOL: GDEToolDefinition = {
     },
   },
 };
+
+/**
+ * Fields accepted by PATCH /activities/{activityId} for one activity type.
+ * The API reference defines them per type, with the same names as the draft
+ * fields, so they are derived from the draft tools. Returns undefined for types
+ * the reference does not define updates for (github-repository, youtube-video).
+ */
+export function getGDEUpdatableFields(type: string): { fields: string[]; metrics: string[] } | undefined {
+  const tool = GDE_TOOLS.find((candidate) => GDE_TOOL_ENDPOINTS[candidate.name] === type);
+  if (!tool) {
+    return undefined;
+  }
+  const properties = tool.inputSchema.properties as Record<string, { properties?: Record<string, unknown> }>;
+  return { fields: Object.keys(properties), metrics: Object.keys(properties.metrics?.properties ?? {}) };
+}
+
+/**
+ * The draft and update endpoints use the same fields, but which ones apply
+ * depends on the activity type. The server checks them against the type of the
+ * activity being updated before anything is sent.
+ */
+export const GDE_UPDATE_ACTIVITY_TOOL: GDEToolDefinition = {
+  name: "update_gde_activity",
+  description:
+    "Update a submitted Google GDE activity (Advocu). Get the activityId from list_gde_activities. " +
+    "Only the fields in data are sent; fields you leave out are not part of the request. " +
+    "By default this only previews the changes and sends nothing: show the preview to the user and call again " +
+    "with apply: true after they confirm.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      activityId: {
+        type: "string",
+        minLength: 1,
+        description: "Activity id, as returned by list_gde_activities",
+      },
+      apply: {
+        type: "boolean",
+        description: "Send the update. When omitted or false, the tool only previews the changes",
+      },
+      data: {
+        type: "object",
+        minProperties: 1,
+        description:
+          "Fields to change. Which fields apply depends on the activity type; the preview rejects the others. " +
+          "imageUrl and city cannot be updated through the API.",
+        properties: {
+          title: { type: "string", minLength: 3, maxLength: 200, description: "Title (all types)" },
+          description: { type: "string", maxLength: 2000, description: "Description (all types)" },
+          tags: {
+            ...TAGS_SCHEMA,
+            description: `Send the complete list the activity should have. ${TAGS_SCHEMA.description}`,
+          },
+          private: { type: "boolean", description: "Make this activity private (all types)" },
+          additionalInfo: { type: "string", maxLength: 2000, description: "Additional information (all types)" },
+          activityDate: {
+            type: "string",
+            pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+            description: "Activity date in YYYY-MM-DD format (all types except stories)",
+          },
+          activityUrl: {
+            type: "string",
+            maxLength: 500,
+            pattern: "^https?://.*",
+            description: "Link (content-creation, mentoring, public-speaking, stories, workshop)",
+          },
+          contentType: {
+            type: "string",
+            description: `Content type. content-creation: ${Object.values(ContentType).join(", ")}. product-feedback-given: ${Object.values(ProductFeedbackContentType).join(", ")}`,
+          },
+          eventFormat: {
+            type: "string",
+            enum: Object.values(EventFormat),
+            description: "Event format (mentoring, public-speaking, workshop)",
+          },
+          country: {
+            type: "string",
+            minLength: 1,
+            maxLength: 100,
+            description:
+              "Country (mentoring, public-speaking, workshop). Accepted only when eventFormat is In-Person or Hybrid",
+          },
+          inPersonAttendees: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "People who attended in person (mentoring, public-speaking, workshop). Accepted only when eventFormat is Hybrid",
+          },
+          productDescription: {
+            type: "string",
+            maxLength: 500,
+            description: "What product was it about? (product-feedback-given)",
+          },
+          format: {
+            type: "string",
+            enum: Object.values(InteractionFormat),
+            description: "Interaction format (interaction-with-googlers)",
+          },
+          interactionType: {
+            type: "string",
+            enum: Object.values(InteractionType),
+            description: "Interaction type (interaction-with-googlers)",
+          },
+          additionalLinks: {
+            type: "string",
+            maxLength: 2000,
+            description: "Additional links (interaction-with-googlers)",
+          },
+          whyIsSignificant: {
+            type: "string",
+            maxLength: 2000,
+            description: "Why the story is significant (stories)",
+          },
+          significanceType: {
+            type: "string",
+            enum: Object.values(SignificanceType),
+            description: "Significance type (stories)",
+          },
+          metrics: {
+            type: "object",
+            description: "Metrics. Each activity type uses one of these",
+            properties: {
+              readers: { type: "integer", minimum: 1, description: "Readers (content-creation)" },
+              attendees: {
+                type: "integer",
+                minimum: 1,
+                description: "Attendees (mentoring, public-speaking, workshop)",
+              },
+              timeSpent: {
+                type: "integer",
+                minimum: 1,
+                description: "Time spent in minutes (interaction-with-googlers, product-feedback-given)",
+              },
+              impact: { type: "integer", minimum: 1, description: "Impact in views, reads, attendees, etc. (stories)" },
+            },
+          },
+        },
+      },
+    },
+    required: ["activityId", "data"],
+  },
+};

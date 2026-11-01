@@ -15,11 +15,19 @@ import {
   McpError,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { GDE_LIST_ACTIVITIES_TOOL, GDE_TOOL_ENDPOINTS, GDE_TOOLS } from "./gdeTools.js";
+import {
+  GDE_LIST_ACTIVITIES_TOOL,
+  GDE_TOOL_ENDPOINTS,
+  GDE_TOOLS,
+  GDE_UPDATE_ACTIVITY_TOOL,
+  getGDEUpdatableFields,
+} from "./gdeTools.js";
 // GDE imports
 import type {
+  Activity,
   ActivityListQuery,
   ActivityListResponse,
+  ActivityUpdateRequest,
   ContentCreationDraft,
   GooglerInteractionDraft,
   MentoringDraft,
@@ -41,6 +49,36 @@ type GDEActivityDraft =
 // MVP imports
 import type { MVPBlogActivity, MVPSpeakingActivity, MVPVideoActivity } from "./interfaces/mvp/index.js";
 import { MVPActivityRole, MVPActivityType, MVPTargetAudience } from "./types/mvp/index.js";
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Lists the values that would change, one line per field. Values are compared
+ * as JSON, so a different tag order counts as a change. Stored text fields can
+ * contain HTML, which is shown as stored.
+ */
+function describeActivityChanges(current: Record<string, unknown>, data: Record<string, unknown>): string[] {
+  const changes: string[] = [];
+  const compare = (label: string, from: unknown, to: unknown) => {
+    if (JSON.stringify(from) !== JSON.stringify(to)) {
+      changes.push(`- ${label}: ${from === undefined ? "(not set)" : JSON.stringify(from)} -> ${JSON.stringify(to)}`);
+    }
+  };
+  for (const [field, value] of Object.entries(data)) {
+    const currentValue = current[field];
+    if (field === "metrics" && isPlainObject(value)) {
+      const currentMetrics = isPlainObject(currentValue) ? currentValue : {};
+      for (const [metric, metricValue] of Object.entries(value)) {
+        compare(`metrics.${metric}`, currentMetrics[metric], metricValue);
+      }
+    } else {
+      compare(field, currentValue, value);
+    }
+  }
+  return changes;
+}
 
 // Get the docs directory from environment variable or fallback
 // IMPORTANT: Set DOCS_DIR in Claude Desktop config to the full path
@@ -194,6 +232,7 @@ export class UnifiedActivityReportingServer {
             description: tool.description.replace(/ draft$/, " draft to the Google GDE program (Advocu)"),
           })),
           GDE_LIST_ACTIVITIES_TOOL,
+          GDE_UPDATE_ACTIVITY_TOOL,
         );
       }
 
@@ -385,6 +424,16 @@ export class UnifiedActivityReportingServer {
             );
           }
           return await this.listGDEActivities((args ?? {}) as ActivityListQuery);
+        }
+
+        if (name === GDE_UPDATE_ACTIVITY_TOOL.name) {
+          if (!this.gdeEnabled) {
+            throw new McpError(
+              ErrorCode.InvalidRequest,
+              "GDE tools are not enabled. Please configure GDE credentials.",
+            );
+          }
+          return await this.updateGDEActivity((args ?? {}) as unknown as ActivityUpdateRequest);
         }
 
         if (name.startsWith("submit_gde_")) {
@@ -719,7 +768,25 @@ export class UnifiedActivityReportingServer {
     }
   }
 
-  private async listGDEActivities(query: ActivityListQuery) {
+  private gdeErrorResult(text: string) {
+    return {
+      content: [
+        {
+          type: "text",
+          text,
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  /**
+   * Fetches one page of GET /activities. API errors come back as a message so
+   * that callers can report them as a failed tool call.
+   */
+  private async fetchGDEActivitiesPage(
+    query: ActivityListQuery,
+  ): Promise<{ result: ActivityListResponse } | { errorMessage: string }> {
     const params = new URLSearchParams();
     for (const key of ["from", "to", "updatedAfter", "page", "size"] as const) {
       const value = query[key];
@@ -730,77 +797,74 @@ export class UnifiedActivityReportingServer {
     const queryString = params.toString();
     const url = `${this.gdeBaseUrl}/activities${queryString ? `?${queryString}` : ""}`;
 
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.gdeAccessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+
+      if (response.status === 401) {
+        return {
+          errorMessage:
+            "❌ GDE authentication failed. Your ADVOCU_ACCESS_TOKEN may be expired or invalid.\n\nPlease check your Advocu access token configuration.",
+        };
+      }
+      if (response.status === 400) {
+        return {
+          errorMessage: `❌ GDE API rejected the request:\n\n${errorText}\n\nPlease check:\n- Dates are UTC date-time strings (e.g. 2026-01-01T00:00:00Z)\n- page is 0 or more and size is between 1 and 100`,
+        };
+      }
+      if (response.status === 429) {
+        return { errorMessage: "⏱️ GDE API rate limit exceeded (30 requests/minute). Please wait and try again." };
+      }
+      return { errorMessage: `❌ GDE API error (${response.status}):\n\n${errorText}` };
+    }
+
+    // The API returns no totals, so a missing or malformed content array must
+    // not be reported as an empty page (which would mean "no more activities").
+    const body = await response.text();
+    let result: ActivityListResponse | undefined;
     try {
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.gdeAccessToken}`,
-        },
-      });
+      result = JSON.parse(body) as ActivityListResponse;
+    } catch {
+      result = undefined;
+    }
+    if (!result || typeof result !== "object" || !Array.isArray(result.content)) {
+      return {
+        errorMessage: `❌ Unexpected response from GDE API (${response.status}): expected an object with a "content" array.\n\n${body.slice(0, 500)}`,
+      };
+    }
+    return { result };
+  }
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage: string;
-
-        if (response.status === 401) {
-          errorMessage =
-            "❌ GDE authentication failed. Your ADVOCU_ACCESS_TOKEN may be expired or invalid.\n\nPlease check your Advocu access token configuration.";
-        } else if (response.status === 400) {
-          errorMessage = `❌ GDE API rejected the request:\n\n${errorText}\n\nPlease check:\n- Dates are UTC date-time strings (e.g. 2026-01-01T00:00:00Z)\n- page is 0 or more and size is between 1 and 100`;
-        } else if (response.status === 429) {
-          errorMessage = "⏱️ GDE API rate limit exceeded (30 requests/minute). Please wait and try again.";
-        } else {
-          errorMessage = `❌ GDE API error (${response.status}):\n\n${errorText}`;
-        }
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: errorMessage,
-            },
-          ],
-          isError: true,
-        };
+  private async listGDEActivities(query: ActivityListQuery) {
+    try {
+      const page = await this.fetchGDEActivitiesPage(query);
+      if ("errorMessage" in page) {
+        return this.gdeErrorResult(page.errorMessage);
       }
-
-      // The API returns no totals, so a missing or malformed content array must
-      // not be reported as an empty page (which would mean "no more activities").
-      const body = await response.text();
-      let result: ActivityListResponse | undefined;
-      try {
-        result = JSON.parse(body) as ActivityListResponse;
-      } catch {
-        result = undefined;
-      }
-      if (!result || typeof result !== "object" || !Array.isArray(result.content)) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `❌ Unexpected response from GDE API (${response.status}): expected an object with a "content" array.\n\n${body.slice(0, 500)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
+      const { result } = page;
 
       const count = result.content.length;
-      const page = query.page ?? 0;
+      const pageNumber = query.page ?? 0;
       const size = query.size ?? 10;
       const pageNote =
         count === 0
           ? "No activities on this page, so there are no more pages."
           : count < size
             ? "The page is not full, so this is probably the last page."
-            : `There may be more activities: request page ${page + 1} to continue.`;
+            : `There may be more activities: request page ${pageNumber + 1} to continue.`;
 
       return {
         content: [
           {
             type: "text",
-            text: `📋 GDE activities: page ${page}, ${count} item(s) (page size ${size}). ${pageNote}\n\n${JSON.stringify(result, null, 2)}`,
+            text: `📋 GDE activities: page ${pageNumber}, ${count} item(s) (page size ${size}). ${pageNote}\n\n${JSON.stringify(result, null, 2)}`,
           },
         ],
       };
@@ -808,6 +872,134 @@ export class UnifiedActivityReportingServer {
       if (error instanceof McpError) throw error;
       const errorMsg = this.getErrorMessage(error);
       throw new McpError(ErrorCode.InternalError, `❌ Failed to list GDE activities:\n\n${errorMsg}`);
+    }
+  }
+
+  /**
+   * The API has no endpoint for reading a single activity, so it is looked up
+   * by walking the list. The page limit guards against an API that ignores the
+   * page parameter; 20 pages of 100 is far more than one person's activities.
+   */
+  private async findGDEActivity(activityId: string): Promise<{ activity: Activity } | { errorMessage: string }> {
+    const size = 100;
+    for (let page = 0; page < 20; page++) {
+      const fetched = await this.fetchGDEActivitiesPage({ page, size });
+      if ("errorMessage" in fetched) {
+        return fetched;
+      }
+      const activity = fetched.result.content.find((candidate) => candidate.activityId === activityId);
+      if (activity) {
+        return { activity };
+      }
+      if (fetched.result.content.length < size) {
+        return {
+          errorMessage: `❌ No activity with id "${activityId}" was found. Use list_gde_activities to get ids.`,
+        };
+      }
+    }
+    return { errorMessage: `❌ No activity with id "${activityId}" was found in the first 2000 activities.` };
+  }
+
+  private async updateGDEActivity({ activityId, data, apply }: ActivityUpdateRequest) {
+    if (typeof activityId !== "string" || !activityId) {
+      return this.gdeErrorResult("❌ activityId is required. Use list_gde_activities to get ids.");
+    }
+    if (!isPlainObject(data) || Object.keys(data).length === 0) {
+      return this.gdeErrorResult("❌ data must be an object with at least one field to change.");
+    }
+
+    try {
+      const found = await this.findGDEActivity(activityId);
+      if ("errorMessage" in found) {
+        return this.gdeErrorResult(found.errorMessage);
+      }
+      const { activity } = found;
+
+      const updatable = getGDEUpdatableFields(activity.type);
+      if (!updatable) {
+        return this.gdeErrorResult(
+          `❌ Activities of type "${activity.type}" cannot be updated: the API reference defines updates for the 7 draft types only.`,
+        );
+      }
+      const unknownFields = Object.keys(data).filter((field) => !updatable.fields.includes(field));
+      const metrics = data.metrics;
+      if (isPlainObject(metrics)) {
+        unknownFields.push(
+          ...Object.keys(metrics)
+            .filter((field) => !updatable.metrics.includes(field))
+            .map((field) => `metrics.${field}`),
+        );
+      }
+      if (unknownFields.length > 0) {
+        return this.gdeErrorResult(
+          `❌ Nothing was sent. These fields do not apply to "${activity.type}" activities: ${unknownFields.join(", ")}\n\nFields for this type: ${updatable.fields.join(", ")}`,
+        );
+      }
+
+      const changes = describeActivityChanges(activity.data, data);
+      const summary = `Activity: ${String(activity.data.title ?? "(no title)")} (${activity.type}, ${activityId})`;
+      if (changes.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `ℹ️ Nothing was sent: the fields already have these values.\n\n${summary}`,
+            },
+          ],
+        };
+      }
+      const changeList = changes.join("\n");
+
+      if (apply !== true) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `🔍 Preview only, nothing was sent.\n\n${summary}\n\nChanges:\n${changeList}\n\nFields not listed are not part of the request. Show these changes to the user and call again with apply: true after they confirm.`,
+            },
+          ],
+        };
+      }
+
+      const response = await fetch(`${this.gdeBaseUrl}/activities/${encodeURIComponent(activityId)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.gdeAccessToken}`,
+        },
+        body: JSON.stringify({ data }),
+      });
+      const body = await response.text();
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          return this.gdeErrorResult(
+            "❌ GDE authentication failed. Your ADVOCU_ACCESS_TOKEN may be expired or invalid.\n\nPlease check your Advocu access token configuration.",
+          );
+        }
+        if (response.status === 400) {
+          return this.gdeErrorResult(
+            `❌ GDE API rejected the update:\n\n${body}\n\nPlease check:\n- Field values match expected formats\n- Tags are valid\n- country and inPersonAttendees match the eventFormat`,
+          );
+        }
+        if (response.status === 429) {
+          return this.gdeErrorResult("⏱️ GDE API rate limit exceeded (30 requests/minute). Please wait and try again.");
+        }
+        return this.gdeErrorResult(`❌ GDE API error (${response.status}):\n\n${body}`);
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `✅ GDE activity updated.\n\n${summary}\n\nChanges:\n${changeList}\n\nResponse: ${body}`,
+          },
+        ],
+      };
+    } catch (error) {
+      if (error instanceof McpError) throw error;
+      const errorMsg = this.getErrorMessage(error);
+      throw new McpError(ErrorCode.InternalError, `❌ Failed to update GDE activity:\n\n${errorMsg}`);
     }
   }
 
