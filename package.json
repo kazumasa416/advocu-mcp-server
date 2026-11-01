@@ -25,6 +25,8 @@
     "test": "echo \"No test specified\"",
     "prepare": "husky",
     "build": "tsc",
+    "build:clean": "node scripts/clean-build.mjs",
+    "verify:build": "node scripts/verify-build.mjs",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "capture-mvp-token": "tsx scripts/capture-mvp-token.ts",
