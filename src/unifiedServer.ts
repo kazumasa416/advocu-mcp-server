@@ -976,6 +976,10 @@ export class UnifiedActivityReportingServer {
           "❌ Nothing was sent. activityId or data differ from the preview of this confirmationId. Call without apply to preview the new content.",
         );
       }
+      // Used up before the first await, so that parallel calls with this id
+      // cannot get past the check above. A failure from here on, including one
+      // where the stored state is uncertain, goes through a new preview.
+      this.pendingGDEUpdates.delete(confirmationId as string);
     }
 
     try {
@@ -1006,7 +1010,6 @@ export class UnifiedActivityReportingServer {
       }
 
       if (pending && canonicalJson(pending.activity) !== canonicalJson(activity)) {
-        this.pendingGDEUpdates.delete(confirmationId as string);
         const changedFields = listChangedActivityFields(pending.activity, activity).join(", ");
         return this.gdeErrorResult(
           `❌ Nothing was sent. The activity changed after the preview (${changedFields}). Call without apply to preview it again.`,
@@ -1046,10 +1049,6 @@ export class UnifiedActivityReportingServer {
           ],
         };
       }
-
-      // A used id is dropped before sending: after a failed request the stored
-      // state is uncertain, so a retry goes through a new preview.
-      this.pendingGDEUpdates.delete(confirmationId as string);
 
       const response = await fetch(`${this.gdeBaseUrl}/activities/${encodeURIComponent(activityId)}`, {
         method: "PATCH",

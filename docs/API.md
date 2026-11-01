@@ -490,8 +490,9 @@ An update takes two calls:
 
 Nothing is sent when:
 
-- `apply: true` comes without the id of a preview, including an id that was already used. Previews are kept in memory,
-  so they do not survive a server restart.
+- `apply: true` comes without the id of a preview, including an id that was already used. An id is used up by the
+  first call that matches its preview, even if that call then fails, so parallel calls with one id send one request
+  and a retry needs a new preview. Previews are kept in memory, so they do not survive a server restart.
 - `activityId` or `data` differ from that preview. Object key order does not count as a difference.
 - The activity differs from the preview, including only its `updatedDate`.
 

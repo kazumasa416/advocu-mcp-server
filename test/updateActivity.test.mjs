@@ -2,15 +2,20 @@
  * Runs update_gde_activity over MCP stdio against a local mock of the Advocu
  * API. Uses made-up activities and never calls the real API. Run `npm run build`
  * first. SERVER_ENTRY can point at another build of dist/index.js.
+ *
+ * If the server cannot start, exits or stops answering, the tests fail with the
+ * reason and the server's stderr instead of hanging.
  */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import http from "node:http";
 import { dirname, join } from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const entry = process.env.SERVER_ENTRY ?? join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "index.js");
+const RPC_TIMEOUT_MS = 5000;
 
 const makeActivity = (activityId, type, data) => ({
   type,
@@ -28,7 +33,21 @@ let listStatus;
 let server;
 let child;
 let nextId = 1;
+let serverFailure;
+let serverStderr = "";
+let stopping = false;
 const waiting = new Map();
+
+const failServer = (reason) => {
+  serverFailure ??= new Error(
+    `MCP server ${reason}.${serverStderr && `\nServer stderr:\n${serverStderr.slice(-2000)}`}`,
+  );
+  for (const { reject, timer } of waiting.values()) {
+    clearTimeout(timer);
+    reject(serverFailure);
+  }
+  waiting.clear();
+};
 
 const filler = Array.from({ length: 100 }, (_, i) => makeActivity(`filler-${i}`, "workshop", { title: "Filler" }));
 const secondPage = () => [
@@ -38,14 +57,39 @@ const secondPage = () => [
 ];
 
 const rpc = (method, params) =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
+    if (serverFailure) {
+      reject(serverFailure);
+      return;
+    }
     const id = nextId++;
-    waiting.set(id, resolve);
+    const timer = setTimeout(() => {
+      waiting.delete(id);
+      reject(new Error(`MCP server did not answer ${method} within ${RPC_TIMEOUT_MS} ms.`));
+    }, RPC_TIMEOUT_MS);
+    waiting.set(id, { resolve, reject, timer });
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
   });
 
+const handleServerLine = (line) => {
+  let message;
+  try {
+    message = JSON.parse(line);
+  } catch {
+    failServer(`wrote something other than JSON to stdout: ${line.slice(0, 200)}`);
+    return;
+  }
+  const pending = waiting.get(message.id);
+  if (pending) {
+    waiting.delete(message.id);
+    clearTimeout(pending.timer);
+    pending.resolve(message);
+  }
+};
+
 const call = async (args) => {
-  const { result } = await rpc("tools/call", { name: "update_gde_activity", arguments: args });
+  const { result, error } = await rpc("tools/call", { name: "update_gde_activity", arguments: args });
+  assert.ok(result, `the tool call returned a protocol error: ${JSON.stringify(error)}`);
   return { isError: result.isError === true, text: result.content[0].text };
 };
 
@@ -58,6 +102,8 @@ const preview = async (activityId, data) => {
 };
 
 before(async () => {
+  assert.ok(existsSync(entry), `Server build not found at ${entry}. Run npm run build first.`);
+
   server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://mock");
     let body = "";
@@ -94,7 +140,17 @@ before(async () => {
       ADVOCU_ACCESS_TOKEN: "test-token",
       ADVOCU_API_URL: `http://127.0.0.1:${server.address().port}`,
     },
-    stdio: ["pipe", "pipe", "ignore"],
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.on("error", (error) => failServer(`could not be started (${error.message})`));
+  child.on("exit", (code, signal) => {
+    if (!stopping) {
+      failServer(`exited early (code ${code}, signal ${signal})`);
+    }
+  });
+  child.stdin.on("error", (error) => failServer(`closed its input (${error.message})`));
+  child.stderr.on("data", (chunk) => {
+    serverStderr += chunk;
   });
   let buffer = "";
   child.stdout.on("data", (chunk) => {
@@ -103,8 +159,7 @@ before(async () => {
       const line = buffer.slice(0, end);
       buffer = buffer.slice(end + 1);
       if (line.trim()) {
-        const message = JSON.parse(line);
-        waiting.get(message.id)?.(message);
+        handleServerLine(line);
       }
     }
   });
@@ -116,8 +171,13 @@ before(async () => {
 });
 
 after(() => {
-  child.kill();
-  server.close();
+  stopping = true;
+  for (const { timer } of waiting.values()) {
+    clearTimeout(timer);
+  }
+  child?.kill("SIGKILL");
+  server?.closeAllConnections();
+  server?.close();
 });
 
 beforeEach(() => {
@@ -316,6 +376,28 @@ test("an activity on a later page is found", async () => {
   const result = await call({ activityId: "late-1", data, apply: true, confirmationId: id });
   assert.equal(result.isError, false, result.text);
   assert.equal(patches[0].url, "/activities/late-1");
+});
+
+test("parallel applies with one confirmationId send one PATCH", async () => {
+  const data = { title: "New title" };
+  const { id } = await preview("article-1", data);
+  const args = { activityId: "article-1", data, apply: true, confirmationId: id };
+  const results = await Promise.all([call(args), call(args), call(args)]);
+  assert.equal(patches.length, 1);
+  assert.equal(results.filter((result) => !result.isError).length, 1);
+});
+
+test("a confirmationId is used up even when the re-read fails", async () => {
+  const data = { title: "New title" };
+  const { id } = await preview("article-1", data);
+  listStatus = 500;
+  const failed = await call({ activityId: "article-1", data, apply: true, confirmationId: id });
+  assert.equal(failed.isError, true);
+
+  listStatus = 200;
+  const retry = await call({ activityId: "article-1", data, apply: true, confirmationId: id });
+  assert.equal(retry.isError, true);
+  assert.equal(patches.length, 0);
 });
 
 for (const status of [400, 401, 404, 429, 500]) {
