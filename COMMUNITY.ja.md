@@ -39,7 +39,7 @@
 | OS | macOS 15.8.1（Apple Silicon） | Windows、Linux、Intel Mac |
 | Node.js | v24.22.1（全手順）、v20.20.2（`npm run build:clean` と `npm run verify:build` のみ） | v18、v22、v20 での `npm ci` |
 | npm | 11.19.1（`npm ci`、ビルド、起動確認）、10.9.9（`npm ci --dry-run` のみ） | 上記以外 |
-| MCP クライアント | この版は MCP の stdio 接続で起動・ツール一覧・一覧取得を確認。Claude Desktop（macOS）では、`gde-community-v1` で一覧取得を確認。下書き登録は以前の版での利用実績のみ | この版の Claude Desktop 上での動作、Claude Code CLI ほかのクライアント |
+| MCP クライアント | この版は MCP の stdio 接続で起動とツール一覧を確認。Claude Desktop（macOS）では、この版の更新ツールの確認表示（送信なし）を確認。一覧取得は `gde-community-v1` で確認。下書き登録は以前の版での利用実績のみ | この版の Claude Desktop 上での下書き登録と更新の送信、Claude Code CLI ほかのクライアント |
 
 ## 導入手順
 
