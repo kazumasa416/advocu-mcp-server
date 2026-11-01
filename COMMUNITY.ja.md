@@ -11,20 +11,26 @@
 |---|---|---|
 | 活動の下書き登録（7 種類） | `submit_gde_content_creation`、`submit_gde_public_speaking`、`submit_gde_workshop`、`submit_gde_mentoring`、`submit_gde_product_feedback`、`submit_gde_googler_interaction`、`submit_gde_story` | 公式の Personal API 資料（2026-11-01 確認）に合わせた入力項目。すべて任意で、足りない項目はポータルで補ってから提出する |
 | 登録済み活動の一覧取得 | `list_gde_activities` | 1 回の呼び出しで 1 ページを取得。提出日（`from`／`to`）と更新日（`updatedAfter`）で絞り込める |
+| 登録済み活動の更新 | `update_gde_activity` | 既定では送信せず、今の値と変更後の値を表示する。`apply: true` を指定したときだけ、指定した項目を送る |
 | 説明書の参照 | `list_documentation`、`get_documentation` | `DOCS_DIR` の設定が必要 |
 
 - API がエラーを返したときは、ツールの呼び出しが失敗として返ります。
 - 登録した活動は **下書き** として保存されます。内容はポータルで確認してから提出してください。
+- 更新は **提出済みの活動を直接変更します**。表示された変更内容を確かめてから送ってください。`tags` は置き換えになるので、残したいタグをすべて指定します。
 - Microsoft MVP 向けのツールは上流と同じで、このコミュニティ版では変更・確認をしていません。
 
 ## 未対応・未確認の事項
 
-- **未対応：** 登録済み活動の更新、一覧の全件自動取得、npm パッケージでの配布。
+- **未対応：** 一覧の全件自動取得、npm パッケージでの配布。公式資料に更新の項目がない `imageUrl`・`city` の更新と、`github-repository`・`youtube-video` の活動の更新。
 - **未確認：**
   - タグのうち `Cloud - BigQuery ` と `Cloud - Conversational Data Analytics ` は、公式資料では末尾に空白が付いています。空白なしでも受け付けられるかは確認していません。
   - `country` に入れる値の形式（例：`Japan`）。公式資料には文字数の制限しか書かれていません。
   - この版の下書き登録ツールは、実際の Advocu API ではなく模擬 API で確認しています（エラー時の扱い、引数を省略したときの送信内容、送り先）。
-  - 一覧取得は、配布者のアカウントで実際の API から読み取れることを、Claude Desktop 上でも確認しています。
+  - 一覧取得は、配布者のアカウントで実際の API から読み取れることを、`gde-community-v1` の Claude Desktop 上でも確認しています。
+  - 更新ツールを実際の API で確認したのは、配布者の記事 1 件だけです（`metrics` のみ、`tags` のみの更新）。送らなかった項目は残り、ほかに変わったのは `updatedDate` だけでした。ほかの 6 種類は模擬 API での確認のみです。
+  - 更新で審査や公開の状態が変わるかは、公式資料に書かれていません。上の記事では、`metrics` のみの更新のあと、ポータルの表示に問題はありませんでした。
+  - `country` と `inPersonAttendees` の条件が、保存済みの `eventFormat` でも判定されるか。
+  - 保存時に HTML になる項目（`description` など）にプレーンテキストを送ったとき、保存される内容。
 
 ## 動作確認した環境
 
@@ -33,16 +39,16 @@
 | OS | macOS 15.8.1（Apple Silicon） | Windows、Linux、Intel Mac |
 | Node.js | v24.22.1（全手順）、v20.20.2（`npm run build:clean` と `npm run verify:build` のみ） | v18、v22、v20 での `npm ci` |
 | npm | 11.19.1（`npm ci`、ビルド、起動確認）、10.9.9（`npm ci --dry-run` のみ） | 上記以外 |
-| MCP クライアント | この版は MCP の stdio 接続で起動・ツール一覧・一覧取得を確認。Claude Desktop（macOS）でも、この版の一覧取得を確認。下書き登録は以前の版での利用実績のみ | この版の Claude Desktop 上での下書き登録、Claude Code CLI ほかのクライアント |
+| MCP クライアント | この版は MCP の stdio 接続で起動・ツール一覧・一覧取得を確認。Claude Desktop（macOS）では、`gde-community-v1` で一覧取得を確認。下書き登録は以前の版での利用実績のみ | この版の Claude Desktop 上での動作、Claude Code CLI ほかのクライアント |
 
 ## 導入手順
 
 ### 1. 取得とビルド
 
-Git、Node.js、npm が必要です。確認済みのタグ（ここでは `gde-community-v1`）を指定して取得します。
+Git、Node.js、npm が必要です。確認済みのタグ（ここでは `gde-community-v2`）を指定して取得します。
 
 ```bash
-git clone --branch gde-community-v1 https://github.com/kazumasa416/advocu-mcp-server.git advocu-mcp-server-gde
+git clone --branch gde-community-v2 https://github.com/kazumasa416/advocu-mcp-server.git advocu-mcp-server-gde
 cd advocu-mcp-server-gde
 npm ci
 npm run build:clean
@@ -97,7 +103,7 @@ npm run verify:build
 
 ## 更新・切り戻し
 
-新しい確認済みタグ（例：`gde-community-v2`）が出たら、取得したフォルダで次を実行し、Claude Desktop を再起動します。
+新しい確認済みタグが出たら、取得したフォルダで次を実行し、Claude Desktop を再起動します。
 
 ```bash
 git fetch --tags
@@ -107,7 +113,7 @@ npm run build:clean
 npm run verify:build
 ```
 
-前の版に戻すときは、`git checkout` に前のタグを指定して同じ手順を実行します。
+上は `gde-community-v2` に更新する例です。前の版に戻すときは、`git checkout` に前のタグ（例：`gde-community-v1`）を指定して同じ手順を実行します。
 
 `dist/` だけを手で消して `npm run build` すると、差分ビルドの記録が残るため、変更したファイルしか出力されず起動できなくなることがあります。更新のときは `npm run build:clean` を使ってください。
 

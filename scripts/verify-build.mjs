@@ -23,6 +23,7 @@ const expectedTools = [
   "submit_gde_googler_interaction",
   "submit_gde_story",
   "list_gde_activities",
+  "update_gde_activity",
   "list_documentation",
   "get_documentation",
 ];

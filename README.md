@@ -2,8 +2,8 @@
 
 > **Community edition (fork).** This fork is not an official release of Google, Advocu or the upstream repository
 > ([carlosazaustre/advocu-mcp-server](https://github.com/carlosazaustre/advocu-mcp-server)). It adds GDE draft tools
-> aligned with the current Advocu Personal API reference and an activity list tool; these changes are being proposed
-> upstream as pull requests. Install a verified tag by following [COMMUNITY.ja.md](COMMUNITY.ja.md) (Japanese); the
+> aligned with the current Advocu Personal API reference, plus activity list and update tools; these changes are being
+> proposed upstream as pull requests. Install a verified tag by following [COMMUNITY.ja.md](COMMUNITY.ja.md) (Japanese); the
 > install steps below still point to the upstream repository and npm package.
 >
 > **コミュニティ版（フォーク）です。** Google・Advocu・上流の公式版ではありません。導入は [COMMUNITY.ja.md](COMMUNITY.ja.md) の手順で、確認済みのタグを指定してください。
