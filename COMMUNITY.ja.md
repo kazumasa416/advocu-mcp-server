@@ -11,12 +11,14 @@
 |---|---|---|
 | 活動の下書き登録（7 種類） | `submit_gde_content_creation`、`submit_gde_public_speaking`、`submit_gde_workshop`、`submit_gde_mentoring`、`submit_gde_product_feedback`、`submit_gde_googler_interaction`、`submit_gde_story` | 公式の Personal API 資料（2026-11-01 確認）に合わせた入力項目。すべて任意で、足りない項目はポータルで補ってから提出する |
 | 登録済み活動の一覧取得 | `list_gde_activities` | 1 回の呼び出しで 1 ページを取得。提出日（`from`／`to`）と更新日（`updatedAfter`）で絞り込める |
-| 登録済み活動の更新 | `update_gde_activity` | 既定では送信せず、今の値と変更後の値を表示する。`apply: true` を指定したときだけ、指定した項目を送る |
+| 登録済み活動の更新 | `update_gde_activity` | 最初の呼び出しでは送信せず、今の値、変更後の値、送信内容、確認 ID を表示する。同じ内容で `apply: true` と確認 ID を指定した 2 回目の呼び出しでだけ送信する |
 | 説明書の参照 | `list_documentation`、`get_documentation` | `DOCS_DIR` の設定が必要 |
 
 - API がエラーを返したときは、ツールの呼び出しが失敗として返ります。
 - 登録した活動は **下書き** として保存されます。内容はポータルで確認してから提出してください。
-- 更新は **提出済みの活動を直接変更します**。表示された変更内容を確かめてから送ってください。`tags` は置き換えになるので、残したいタグをすべて指定します。
+- 更新は **提出済みの活動を直接変更します**。表示された変更内容を確かめてから送ってください。
+- `tags` は全体の置き換えです。今のタグを残すには、一覧取得で得た値もすべて指定します。確認の表示には、削除されるタグも出ます。
+- 確認 ID は 1 回だけ使えます。内容を変えた場合や、確認のあとに活動が変わっていた場合は送信されません。ただし、送信直前の再確認から送信までのごく短い間の変更は検知できません（API に条件付き更新の仕組みが記載されていないため）。
 - Microsoft MVP 向けのツールは上流と同じで、このコミュニティ版では変更・確認をしていません。
 
 ## 未対応・未確認の事項
@@ -27,7 +29,7 @@
   - `country` に入れる値の形式（例：`Japan`）。公式資料には文字数の制限しか書かれていません。
   - この版の下書き登録ツールは、実際の Advocu API ではなく模擬 API で確認しています（エラー時の扱い、引数を省略したときの送信内容、送り先）。
   - 一覧取得は、配布者のアカウントで実際の API から読み取れることを、`gde-community-v1` の Claude Desktop 上でも確認しています。
-  - 更新ツールを実際の API で確認したのは、配布者の記事 1 件だけです（`metrics` のみ、`tags` のみの更新）。送らなかった項目は残り、ほかに変わったのは `updatedDate` だけでした。ほかの 6 種類は模擬 API での確認のみです。
+  - 更新ツールを実際の API で確認したのは、配布者の記事 1 件だけです（`metrics` のみ、`tags` のみの更新）。送らなかった項目は残り、ほかに変わったのは `updatedDate` だけでした。ほかの 6 種類は模擬 API での確認のみです。この確認は確認 ID を導入する前のビルドで行ったもので、確認 ID を使う現在の手順は、模擬 API でのみ確認しています。
   - 更新で審査や公開の状態が変わるかは、公式資料に書かれていません。上の記事では、`metrics` のみの更新のあと、ポータルの表示に問題はありませんでした。
   - `country` と `inPersonAttendees` の条件が、保存済みの `eventFormat` でも判定されるか。
   - 保存時に HTML になる項目（`description` など）にプレーンテキストを送ったとき、保存される内容。
@@ -39,7 +41,7 @@
 | OS | macOS 15.8.1（Apple Silicon） | Windows、Linux、Intel Mac |
 | Node.js | v24.22.1（全手順）、v20.20.2（`npm run build:clean` と `npm run verify:build` のみ） | v18、v22、v20 での `npm ci` |
 | npm | 11.19.1（`npm ci`、ビルド、起動確認）、10.9.9（`npm ci --dry-run` のみ） | 上記以外 |
-| MCP クライアント | この版は MCP の stdio 接続で起動とツール一覧を確認。Claude Desktop（macOS）では、この版の更新ツールの確認表示（送信なし）を確認。一覧取得は `gde-community-v1` で確認。下書き登録は以前の版での利用実績のみ | この版の Claude Desktop 上での下書き登録と更新の送信、Claude Code CLI ほかのクライアント |
+| MCP クライアント | この版は MCP の stdio 接続で起動とツール一覧を確認。Claude Desktop（macOS）では、確認 ID を導入する前のビルドで更新ツールの確認表示（送信なし）を確認。一覧取得は `gde-community-v1` で確認。下書き登録は以前の版での利用実績のみ | この版の Claude Desktop 上での動作、Claude Code CLI ほかのクライアント |
 
 ## 導入手順
 
