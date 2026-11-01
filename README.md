@@ -274,7 +274,7 @@ Just talk to Claude naturally! Here are examples:
 | `submit_gde_googler_interaction` | Google employee interactions |
 | `submit_gde_story` | Success stories |
 | `list_gde_activities` | List one page of submitted activities, filtered by submission or update date |
-| `update_gde_activity` | Update a submitted activity. Previews the changes unless called with `apply: true` |
+| `update_gde_activity` | Update a submitted activity: preview first, then apply with the returned `confirmationId` |
 
 ---
 

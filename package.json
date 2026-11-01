@@ -22,7 +22,7 @@
   "scripts": {
     "lint": "biome check",
     "format": "biome format --write",
-    "test": "echo \"No test specified\"",
+    "test": "node --test test/updateActivity.test.mjs",
     "prepare": "husky",
     "build": "tsc",
     "build:clean": "node scripts/clean-build.mjs",

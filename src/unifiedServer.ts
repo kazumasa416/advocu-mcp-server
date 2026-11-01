@@ -3,6 +3,7 @@
  * @description MCP server that supports both GDE (Advocu) and Microsoft MVP activity submissions
  */
 
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -54,6 +55,44 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** JSON with sorted object keys, so that key order does not count as a difference. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (isPlainObject(value)) {
+    const fields = Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`);
+    return `{${fields.join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+/** Names the top-level and data fields that differ between two reads of an activity. */
+function listChangedActivityFields(before: Activity, after: Activity): string[] {
+  const changed = (["type", "submissionDate", "updatedDate", "archiveDate"] as const).filter(
+    (field) => before[field] !== after[field],
+  ) as string[];
+  for (const field of new Set([...Object.keys(before.data), ...Object.keys(after.data)])) {
+    if (canonicalJson(before.data[field]) !== canonicalJson(after.data[field])) {
+      changed.push(`data.${field}`);
+    }
+  }
+  return changed;
+}
+
+/** A previewed update, kept until it is applied or found to be out of date. */
+interface PendingGDEUpdate {
+  activityId: string;
+  data: string;
+  body: string;
+  activity: Activity;
+}
+
+/** Oldest previews are dropped beyond this; applying one of them asks for a new preview. */
+const MAX_PENDING_GDE_UPDATES = 50;
+
 /**
  * Lists the values that would change, one line per field. Values are compared
  * as JSON, so a different tag order counts as a change. Stored text fields can
@@ -75,6 +114,12 @@ function describeActivityChanges(current: Record<string, unknown>, data: Record<
       }
     } else {
       compare(field, currentValue, value);
+      if (field === "tags" && Array.isArray(currentValue) && Array.isArray(value)) {
+        const removed = currentValue.filter((tag) => !value.includes(tag));
+        if (removed.length > 0) {
+          changes.push(`  Tags removed by this update: ${JSON.stringify(removed)}`);
+        }
+      }
     }
   }
   return changes;
@@ -131,6 +176,7 @@ export class UnifiedActivityReportingServer {
   private readonly gdeAccessToken: string | null;
   private readonly gdeBaseUrl: string;
   private readonly gdeEnabled: boolean;
+  private readonly pendingGDEUpdates = new Map<string, PendingGDEUpdate>();
 
   // MVP configuration
   private readonly mvpAccessToken: string | null;
@@ -900,12 +946,36 @@ export class UnifiedActivityReportingServer {
     return { errorMessage: `❌ No activity with id "${activityId}" was found in the first 2000 activities.` };
   }
 
-  private async updateGDEActivity({ activityId, data, apply }: ActivityUpdateRequest) {
+  /**
+   * Previews an update, or applies a previewed one. Applying re-reads the
+   * activity and refuses to send if it changed since the preview. The reference
+   * documents no conditional update, so a change made between that read and the
+   * PATCH cannot be detected.
+   */
+  private async updateGDEActivity({ activityId, data, apply, confirmationId }: ActivityUpdateRequest) {
     if (typeof activityId !== "string" || !activityId) {
       return this.gdeErrorResult("❌ activityId is required. Use list_gde_activities to get ids.");
     }
     if (!isPlainObject(data) || Object.keys(data).length === 0) {
       return this.gdeErrorResult("❌ data must be an object with at least one field to change.");
+    }
+    if ("metrics" in data && (!isPlainObject(data.metrics) || Object.keys(data.metrics).length === 0)) {
+      return this.gdeErrorResult("❌ Nothing was sent. metrics must be an object with at least one value.");
+    }
+
+    let pending: PendingGDEUpdate | undefined;
+    if (apply === true) {
+      pending = typeof confirmationId === "string" ? this.pendingGDEUpdates.get(confirmationId) : undefined;
+      if (!pending) {
+        return this.gdeErrorResult(
+          "❌ Nothing was sent. apply: true needs the confirmationId of a preview, and each id works once. Call without apply to get a new preview.",
+        );
+      }
+      if (pending.activityId !== activityId || pending.data !== canonicalJson(data)) {
+        return this.gdeErrorResult(
+          "❌ Nothing was sent. activityId or data differ from the preview of this confirmationId. Call without apply to preview the new content.",
+        );
+      }
     }
 
     try {
@@ -922,10 +992,9 @@ export class UnifiedActivityReportingServer {
         );
       }
       const unknownFields = Object.keys(data).filter((field) => !updatable.fields.includes(field));
-      const metrics = data.metrics;
-      if (isPlainObject(metrics)) {
+      if (isPlainObject(data.metrics)) {
         unknownFields.push(
-          ...Object.keys(metrics)
+          ...Object.keys(data.metrics)
             .filter((field) => !updatable.metrics.includes(field))
             .map((field) => `metrics.${field}`),
         );
@@ -933,6 +1002,14 @@ export class UnifiedActivityReportingServer {
       if (unknownFields.length > 0) {
         return this.gdeErrorResult(
           `❌ Nothing was sent. These fields do not apply to "${activity.type}" activities: ${unknownFields.join(", ")}\n\nFields for this type: ${updatable.fields.join(", ")}`,
+        );
+      }
+
+      if (pending && canonicalJson(pending.activity) !== canonicalJson(activity)) {
+        this.pendingGDEUpdates.delete(confirmationId as string);
+        const changedFields = listChangedActivityFields(pending.activity, activity).join(", ");
+        return this.gdeErrorResult(
+          `❌ Nothing was sent. The activity changed after the preview (${changedFields}). Call without apply to preview it again.`,
         );
       }
 
@@ -950,16 +1027,29 @@ export class UnifiedActivityReportingServer {
       }
       const changeList = changes.join("\n");
 
-      if (apply !== true) {
+      if (!pending) {
+        const body = JSON.stringify({ data });
+        const newId = randomUUID();
+        if (this.pendingGDEUpdates.size >= MAX_PENDING_GDE_UPDATES) {
+          const oldest = this.pendingGDEUpdates.keys().next().value;
+          if (oldest !== undefined) {
+            this.pendingGDEUpdates.delete(oldest);
+          }
+        }
+        this.pendingGDEUpdates.set(newId, { activityId, data: canonicalJson(data), body, activity });
         return {
           content: [
             {
               type: "text",
-              text: `🔍 Preview only, nothing was sent.\n\n${summary}\n\nChanges:\n${changeList}\n\nFields not listed are not part of the request. Show these changes to the user and call again with apply: true after they confirm.`,
+              text: `🔍 Preview only, nothing was sent.\n\n${summary}\n\nChanges:\n${changeList}\n\nRequest body to send: ${body}\nFields not in the request body are not sent.\n\nconfirmationId: ${newId}\n\nShow these changes to the user. After they confirm, call again with the same activityId and data, apply: true and this confirmationId. It works once.`,
             },
           ],
         };
       }
+
+      // A used id is dropped before sending: after a failed request the stored
+      // state is uncertain, so a retry goes through a new preview.
+      this.pendingGDEUpdates.delete(confirmationId as string);
 
       const response = await fetch(`${this.gdeBaseUrl}/activities/${encodeURIComponent(activityId)}`, {
         method: "PATCH",
@@ -967,7 +1057,7 @@ export class UnifiedActivityReportingServer {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.gdeAccessToken}`,
         },
-        body: JSON.stringify({ data }),
+        body: pending.body,
       });
       const body = await response.text();
 

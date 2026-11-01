@@ -473,15 +473,33 @@ Not verified:
 
 ### `update_gde_activity`
 
-| Argument   | Type    | Description                                                                 |
-| ---------- | ------- | --------------------------------------------------------------------------- |
-| activityId | string  | Activity id from `list_gde_activities`                                      |
-| data       | object  | Fields to change. Only these fields are sent                                |
-| apply      | boolean | Send the update. When omitted or false, the tool only previews the changes |
+| Argument       | Type    | Description                                                                         |
+| -------------- | ------- | ----------------------------------------------------------------------------------- |
+| activityId     | string  | Activity id from `list_gde_activities`                                              |
+| data           | object  | Fields to change. Only these fields are sent. `metrics` needs at least one value    |
+| apply          | boolean | Send the previewed update. When omitted or false, the tool only previews it         |
+| confirmationId | string  | Id returned by the preview. Required with `apply: true`; works once                 |
 
-The API cannot read a single activity, so the tool finds it by walking `GET /activities` (one request per 100
-activities). It then checks the fields against the activity type and shows the current and new values. Nothing is
-sent if a field does not apply to the type or if all values already match.
+An update takes two calls:
+
+1. Without `apply`, the tool finds the activity by walking `GET /activities` (one request per 100 activities), checks
+   the fields against the activity type, and returns the current and new values, the exact request body and a
+   `confirmationId`. Nothing is sent. If all values already match, there is no id because there is nothing to send.
+2. With the same `activityId` and `data`, `apply: true` and the `confirmationId`, the tool reads the activity again
+   and sends the previewed request body.
+
+Nothing is sent when:
+
+- `apply: true` comes without the id of a preview, including an id that was already used. Previews are kept in memory,
+  so they do not survive a server restart.
+- `activityId` or `data` differ from that preview. Object key order does not count as a difference.
+- The activity differs from the preview, including only its `updatedDate`.
+
+The reference documents no conditional update, so a change made in the short time between that last read and the
+`PATCH` cannot be detected, and the `PATCH` would overwrite the fields it sends.
+
+To keep existing tags, copy them from `data.tags` in `list_gde_activities` and add the new ones. The preview lists the
+tags the update would remove.
 
 ------
 

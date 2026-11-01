@@ -12,6 +12,8 @@ export interface ActivityUpdateRequest {
   activityId: string;
   /** Fields to change. Only these fields are sent to the API */
   data: Record<string, unknown>;
-  /** Send the update. Without it the tool only previews the changes */
+  /** Send the previewed update. Without it the tool only previews the changes */
   apply?: boolean;
+  /** Id returned by the preview. Required with apply */
+  confirmationId?: string;
 }

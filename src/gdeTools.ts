@@ -41,13 +41,30 @@ export const GDE_TOOL_ENDPOINTS: Record<string, string> = {
  * in the description instead of an enum and validation is left to the API.
  * Values are quoted so that the trailing spaces some of them carry stay visible.
  */
+const KNOWN_TAGS = Object.values(Tag)
+  .map((tag) => JSON.stringify(tag))
+  .join(", ");
+
 const TAGS_SCHEMA = {
   type: "array",
   items: { type: "string" },
-  description: `Tags (optional). Use the exact values, including any trailing spaces: ${Object.values(Tag)
-    .map((tag) => JSON.stringify(tag))
-    .join(", ")}`,
+  description: `Tags (optional). Use the exact values, including any trailing spaces: ${KNOWN_TAGS}`,
   minItems: 0,
+};
+
+/**
+ * Updates replace the whole stored list, and the API reference accepts more
+ * values for them (331) than for drafts (86), so this does not share the draft
+ * description.
+ */
+const UPDATE_TAGS_SCHEMA = {
+  type: "array",
+  items: { type: "string" },
+  description:
+    "Replaces the whole tag list: any stored tag missing from this array is removed. To keep the existing tags, " +
+    "copy them exactly from data.tags in list_gde_activities and add the new ones. To leave the tags as they are, " +
+    "omit this field. The API also accepts older tags that are not listed here and validates the values. " +
+    `Use the exact values, including any trailing spaces. Current tags: ${KNOWN_TAGS}`,
 };
 
 /**
@@ -553,8 +570,9 @@ export const GDE_UPDATE_ACTIVITY_TOOL: GDEToolDefinition = {
   description:
     "Update a submitted Google GDE activity (Advocu). Get the activityId from list_gde_activities. " +
     "Only the fields in data are sent; fields you leave out are not part of the request. " +
-    "By default this only previews the changes and sends nothing: show the preview to the user and call again " +
-    "with apply: true after they confirm.",
+    "Call without apply first: this sends nothing and returns a preview with a confirmationId. Show the preview to " +
+    "the user. After they confirm, call again with the same activityId and data, apply: true and the " +
+    "confirmationId. The update is refused if the data differs from the preview or the activity changed since then.",
   inputSchema: {
     type: "object",
     properties: {
@@ -565,7 +583,11 @@ export const GDE_UPDATE_ACTIVITY_TOOL: GDEToolDefinition = {
       },
       apply: {
         type: "boolean",
-        description: "Send the update. When omitted or false, the tool only previews the changes",
+        description: "Send the previewed update. When omitted or false, the tool only previews the changes",
+      },
+      confirmationId: {
+        type: "string",
+        description: "Id returned by the preview of this activityId and data. Required with apply: true; works once",
       },
       data: {
         type: "object",
@@ -576,10 +598,7 @@ export const GDE_UPDATE_ACTIVITY_TOOL: GDEToolDefinition = {
         properties: {
           title: { type: "string", minLength: 3, maxLength: 200, description: "Title (all types)" },
           description: { type: "string", maxLength: 2000, description: "Description (all types)" },
-          tags: {
-            ...TAGS_SCHEMA,
-            description: `Send the complete list the activity should have. ${TAGS_SCHEMA.description}`,
-          },
+          tags: UPDATE_TAGS_SCHEMA,
           private: { type: "boolean", description: "Make this activity private (all types)" },
           additionalInfo: { type: "string", maxLength: 2000, description: "Additional information (all types)" },
           activityDate: {
@@ -647,7 +666,7 @@ export const GDE_UPDATE_ACTIVITY_TOOL: GDEToolDefinition = {
           },
           metrics: {
             type: "object",
-            description: "Metrics. Each activity type uses one of these",
+            description: "Metrics, with at least one value. Each activity type uses one of these",
             properties: {
               readers: { type: "integer", minimum: 1, description: "Readers (content-creation)" },
               attendees: {

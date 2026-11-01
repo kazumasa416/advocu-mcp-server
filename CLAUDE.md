@@ -27,6 +27,11 @@ npm start            # Run compiled server from dist/
 npm run build        # Compile TypeScript to dist/
 ```
 
+### Testing
+```bash
+npm test             # Mock API tests for update_gde_activity (run npm run build first)
+```
+
 ### Linting and Formatting
 ```bash
 npm run lint         # Check code with Biome
@@ -124,7 +129,7 @@ The codebase uses a type-safe, inheritance-based structure for activity drafts:
 6. `submit_gde_googler_interaction`
 7. `submit_gde_story`
 8. `list_gde_activities` - One page of submitted activities (`GET /activities`), unified server only
-9. `update_gde_activity` - Update a submitted activity (`PATCH /activities/{activityId}`), previews unless `apply: true`, unified server only
+9. `update_gde_activity` - Update a submitted activity (`PATCH /activities/{activityId}`), preview first, then `apply: true` with the returned `confirmationId`, unified server only
 
 #### MVP Tools (when `MVP_ACCESS_TOKEN` and `MVP_USER_PROFILE_ID` are set)
 1. `submit_mvp_video` - For videos, webinars, livestreams
