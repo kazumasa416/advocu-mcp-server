@@ -761,11 +761,32 @@ export class UnifiedActivityReportingServer {
               text: errorMessage,
             },
           ],
+          isError: true,
         };
       }
 
-      const result = (await response.json()) as ActivityListResponse;
-      const count = Array.isArray(result.content) ? result.content.length : 0;
+      // The API returns no totals, so a missing or malformed content array must
+      // not be reported as an empty page (which would mean "no more activities").
+      const body = await response.text();
+      let result: ActivityListResponse | undefined;
+      try {
+        result = JSON.parse(body) as ActivityListResponse;
+      } catch {
+        result = undefined;
+      }
+      if (!result || typeof result !== "object" || !Array.isArray(result.content)) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `❌ Unexpected response from GDE API (${response.status}): expected an object with a "content" array.\n\n${body.slice(0, 500)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const count = result.content.length;
       const page = query.page ?? 0;
       const size = query.size ?? 10;
       const pageNote =
