@@ -276,7 +276,7 @@ Creates a published content draft.
 
 | Name            | Type    | Description                                | Restrictions                                                 |
 | --------------- | ------- | ------------------------------------------ | ------------------------------------------------------------ |
-| contentType     | string  | Content type                               | enum (8 values)                                              |
+| contentType     | string  | Content type                               | enum (7 values)                                              |
 | title           | string  | What was the title?                        | min length 3, max length 200                                 |
 | description     | string  | What was it about?                         | max length 2000                                              |
 | tags            | array   | Tags                                       | enum (108 values), min items 0                               |

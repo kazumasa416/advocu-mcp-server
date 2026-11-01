@@ -85,7 +85,7 @@ The codebase uses a type-safe, inheritance-based structure for activity drafts:
 ### Type Definitions
 
 #### GDE Enums (in `src/types/`)
-- `ContentType` - 8 types (Articles, Books, Videos, etc.)
+- `ContentType` - 7 types (Articles, Books, Code contribution, Demos, Newsletters, Podcasts, Videos)
 - `EventFormat` - 3 formats (In-Person, Virtual, Hybrid)
 - `Country` - 251 country codes
 - `InteractionFormat` - 8 formats for Googler interactions

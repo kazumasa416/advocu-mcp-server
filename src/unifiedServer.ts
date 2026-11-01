@@ -15,7 +15,7 @@ import {
   McpError,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-
+import { GDE_TOOL_ENDPOINTS, GDE_TOOLS } from "./gdeTools.js";
 // GDE imports
 import type {
   ContentCreationDraft,
@@ -26,17 +26,18 @@ import type {
   StoryDraft,
   WorkshopDraft,
 } from "./interfaces/index.js";
+
+type GDEActivityDraft =
+  | ContentCreationDraft
+  | PublicSpeakingDraft
+  | WorkshopDraft
+  | MentoringDraft
+  | ProductFeedbackDraft
+  | GooglerInteractionDraft
+  | StoryDraft;
+
 // MVP imports
 import type { MVPBlogActivity, MVPSpeakingActivity, MVPVideoActivity } from "./interfaces/mvp/index.js";
-import {
-  ContentType,
-  Country,
-  EventFormat,
-  InteractionFormat,
-  InteractionType,
-  ProductFeedbackContentType,
-  SignificanceType,
-} from "./types/index.js";
 import { MVPActivityRole, MVPActivityType, MVPTargetAudience } from "./types/mvp/index.js";
 
 // Get the docs directory from environment variable or fallback
@@ -185,30 +186,11 @@ export class UnifiedActivityReportingServer {
       // Add GDE tools if enabled
       if (this.gdeEnabled) {
         tools.push(
-          {
-            name: "submit_gde_content_creation",
-            description: "Submit a content creation activity to Google GDE program (Advocu)",
-            inputSchema: {
-              type: "object",
-              properties: {
-                title: { type: "string", minLength: 3, maxLength: 200 },
-                description: { type: "string", maxLength: 2000 },
-                activityDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
-                contentType: { type: "string", enum: Object.values(ContentType) },
-                tags: { type: "array", items: { type: "string" }, minItems: 0 },
-                metrics: {
-                  type: "object",
-                  properties: { readers: { type: "integer", minimum: 1 } },
-                  required: ["readers"],
-                },
-                activityUrl: { type: "string", maxLength: 500, pattern: "^https?://.*" },
-                additionalInfo: { type: "string", maxLength: 2000 },
-                private: { type: "boolean" },
-              },
-              required: ["title", "description", "activityDate", "contentType", "metrics", "activityUrl"],
-            },
-          },
-          // Add other GDE tools...
+          ...GDE_TOOLS.map((tool) => ({
+            ...tool,
+            name: tool.name.replace(/^submit_/, "submit_gde_"),
+            description: tool.description.replace(/ draft$/, " draft to the Google GDE program (Advocu)"),
+          })),
         );
       }
 
@@ -399,10 +381,9 @@ export class UnifiedActivityReportingServer {
               "GDE tools are not enabled. Please configure GDE credentials.",
             );
           }
-          switch (name) {
-            case "submit_gde_content_creation":
-              return await this.submitGDEActivityDraft("content-creation", args as unknown as ContentCreationDraft);
-            // Add other GDE handlers...
+          const endpoint = GDE_TOOL_ENDPOINTS[name.replace(/^submit_gde_/, "submit_")];
+          if (endpoint) {
+            return await this.submitGDEActivityDraft(endpoint, args as unknown as GDEActivityDraft);
           }
         }
 
@@ -664,7 +645,7 @@ export class UnifiedActivityReportingServer {
   }
 
   // GDE Methods
-  private async submitGDEActivityDraft(endpoint: string, data: ContentCreationDraft) {
+  private async submitGDEActivityDraft(endpoint: string, data: GDEActivityDraft) {
     const url = `${this.gdeBaseUrl}/activity-drafts/${endpoint}`;
 
     try {
