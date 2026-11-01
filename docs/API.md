@@ -459,14 +459,15 @@ reference defines updates for the 7 draft types only, not for `github-repository
 
 Response: the updated activity, in the same shape as an item of `GET /activities`.
 
-The reference does not say how omitted fields are treated. In one request that sent only `metrics` for a
-`content-creation` activity, the other fields stayed the same and only `updatedDate` changed.
+The reference does not say how omitted fields are treated. Requests against one `content-creation` activity showed:
+
+- Sending only `metrics` or only `tags` left the other fields the same, apart from `updatedDate`.
+- `tags` replaces the stored list, so send the complete list the activity should have.
+- A tag with a trailing space (`"Cloud - BigQuery "`) is accepted and stored with the space.
 
 Not verified:
 
-- Omitted fields on the other 6 activity types.
-- Whether `tags` replaces or extends the stored list. The tool asks for the complete list so that either result is
-  the intended one.
+- The same behavior on the other 6 activity types.
 - Whether the `eventFormat` conditions on `country` and `inPersonAttendees` also consider the stored `eventFormat`.
 - What is stored when plain text is sent for a field that is returned as HTML, such as `description`.
 
