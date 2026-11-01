@@ -13,6 +13,7 @@ import {
   InteractionType,
   ProductFeedbackContentType,
   SignificanceType,
+  Tag,
 } from "./types/index.js";
 
 export interface GDEToolDefinition {
@@ -33,6 +34,18 @@ export const GDE_TOOL_ENDPOINTS: Record<string, string> = {
   submit_product_feedback: "product-feedback-given",
   submit_googler_interaction: "interaction-with-googlers",
   submit_story: "stories",
+};
+
+/**
+ * Shared schema for the optional tags field. Advocu changes its tag list over
+ * time, so the known values are listed in the description instead of an enum
+ * and validation is left to the API.
+ */
+const TAGS_SCHEMA = {
+  type: "array",
+  items: { type: "string" },
+  description: `Tags (optional). Use the exact tag names shown in the Advocu portal, e.g.: ${Object.values(Tag).join(", ")}`,
+  minItems: 0,
 };
 
 export const GDE_TOOLS: GDEToolDefinition[] = [
@@ -63,12 +76,7 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           description: "Content type",
           enum: Object.values(ContentType),
         },
-        tags: {
-          type: "array",
-          items: { type: "string" },
-          description: "Tags (optional)",
-          minItems: 0,
-        },
+        tags: TAGS_SCHEMA,
         metrics: {
           type: "object",
           properties: {
@@ -121,12 +129,7 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           pattern: "^\\d{4}-\\d{2}-\\d{2}$",
           description: "Date of your talk (YYYY-MM-DD format)",
         },
-        tags: {
-          type: "array",
-          items: { type: "string" },
-          description: "Tags (optional)",
-          minItems: 0,
-        },
+        tags: TAGS_SCHEMA,
         metrics: {
           type: "object",
           properties: {
@@ -194,12 +197,7 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           pattern: "^\\d{4}-\\d{2}-\\d{2}$",
           description: "Date of your workshop (YYYY-MM-DD format)",
         },
-        tags: {
-          type: "array",
-          items: { type: "string" },
-          description: "Tags (optional)",
-          minItems: 0,
-        },
+        tags: TAGS_SCHEMA,
         metrics: {
           type: "object",
           properties: {
@@ -267,12 +265,7 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           pattern: "^\\d{4}-\\d{2}-\\d{2}$",
           description: "Date of your mentoring session (YYYY-MM-DD format)",
         },
-        tags: {
-          type: "array",
-          items: { type: "string" },
-          description: "Tags (optional)",
-          minItems: 0,
-        },
+        tags: TAGS_SCHEMA,
         metrics: {
           type: "object",
           properties: {
@@ -350,12 +343,7 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           maxLength: 500,
           description: "What product was it about?",
         },
-        tags: {
-          type: "array",
-          items: { type: "string" },
-          description: "Tags (optional)",
-          minItems: 0,
-        },
+        tags: TAGS_SCHEMA,
         metrics: {
           type: "object",
           properties: {
@@ -412,12 +400,7 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           enum: Object.values(InteractionType),
           description: "Interaction Type",
         },
-        tags: {
-          type: "array",
-          items: { type: "string" },
-          description: "Tags (optional)",
-          minItems: 0,
-        },
+        tags: TAGS_SCHEMA,
         metrics: {
           type: "object",
           properties: {
@@ -485,12 +468,7 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           pattern: "^https?://.*",
           description: "Link",
         },
-        tags: {
-          type: "array",
-          items: { type: "string" },
-          description: "Tags (optional)",
-          minItems: 0,
-        },
+        tags: TAGS_SCHEMA,
         metrics: {
           type: "object",
           properties: {
