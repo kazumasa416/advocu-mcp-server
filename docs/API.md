@@ -459,7 +459,7 @@ reference defines updates for the 7 draft types only, not for `github-repository
 
 Response: the updated activity, in the same shape as an item of `GET /activities`.
 
-The reference does not say how omitted fields are treated. Requests against one `content-creation` activity showed:
+The reference does not say how omitted fields are treated. Requests against two `content-creation` activities showed:
 
 - Sending only `metrics` or only `tags` left the other fields the same, apart from `updatedDate`.
 - `tags` replaces the stored list, so send the complete list the activity should have.
@@ -469,7 +469,8 @@ Not verified:
 
 - The same behavior on the other 6 activity types.
 - Whether the `eventFormat` conditions on `country` and `inPersonAttendees` also consider the stored `eventFormat`.
-- What is stored when plain text is sent for a field that is returned as HTML, such as `description`.
+- What is stored when a text field such as `description` is updated. Stored values come back either as HTML or as plain
+  text, depending on the activity.
 
 ### `update_gde_activity`
 
