@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const entry = process.env.SERVER_ENTRY ?? join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "index.js");
 const RPC_TIMEOUT_MS = 5000;
+const REQUEST_TIMEOUT_MS = 1000;
 
 const makeActivity = (activityId, type, data) => ({
   type,
@@ -34,25 +35,10 @@ let listStatus;
 let heldPatchActivity;
 let heldListPage;
 let releaseHeld;
+let listMode;
 let server;
-let child;
-let nextId = 1;
-let serverFailure;
-let serverStderr = "";
-let stopping = false;
-const waiting = new Map();
-
-const failServer = (reason) => {
-  serverFailure ??= new Error(
-    `MCP server ${reason}.${serverStderr && `\nServer stderr:\n${serverStderr.slice(-2000)}`}`,
-  );
-  for (const { reject, timer } of waiting.values()) {
-    clearTimeout(timer);
-    reject(serverFailure);
-  }
-  waiting.clear();
-};
-
+let mainServer;
+let timeoutServer;
 const waitUntil = async (condition, description) => {
   const deadline = Date.now() + 2000;
   while (!condition()) {
@@ -68,50 +54,125 @@ const secondPage = () => [
   makeActivity("late-1", "workshop", { title: "Second page", metrics: { attendees: 1 } }),
 ];
 
-const rpc = (method, params) =>
-  new Promise((resolve, reject) => {
-    if (serverFailure) {
-      reject(serverFailure);
-      return;
+const startServer = (extraEnv = {}) => {
+  let nextId = 1;
+  let failure;
+  let stderr = "";
+  let stopping = false;
+  const waiting = new Map();
+
+  const fail = (reason) => {
+    failure ??= new Error(`MCP server ${reason}.${stderr && `\nServer stderr:\n${stderr.slice(-2000)}`}`);
+    for (const { reject, timer } of waiting.values()) {
+      clearTimeout(timer);
+      reject(failure);
     }
-    const id = nextId++;
-    const timer = setTimeout(() => {
-      waiting.delete(id);
-      reject(new Error(`MCP server did not answer ${method} within ${RPC_TIMEOUT_MS} ms.`));
-    }, RPC_TIMEOUT_MS);
-    waiting.set(id, { resolve, reject, timer });
-    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    waiting.clear();
+  };
+
+  const child = spawn(process.execPath, [entry], {
+    env: {
+      PATH: process.env.PATH,
+      ADVOCU_ACCESS_TOKEN: "test-token",
+      ADVOCU_API_URL: `http://127.0.0.1:${server.address().port}`,
+      ...extraEnv,
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.on("error", (error) => fail(`could not be started (${error.message})`));
+  child.on("exit", (code, signal) => {
+    if (!stopping) {
+      fail(`exited early (code ${code}, signal ${signal})`);
+    }
+  });
+  child.stdin.on("error", (error) => fail(`closed its input (${error.message})`));
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
   });
 
-const handleServerLine = (line) => {
-  let message;
-  try {
-    message = JSON.parse(line);
-  } catch {
-    failServer(`wrote something other than JSON to stdout: ${line.slice(0, 200)}`);
-    return;
-  }
-  const pending = waiting.get(message.id);
-  if (pending) {
-    waiting.delete(message.id);
-    clearTimeout(pending.timer);
-    pending.resolve(message);
-  }
+  // A server that stopped answering counts as failed, so that the remaining
+  // tests report it at once instead of each waiting for the timeout.
+  const rpc = (method, params) =>
+    new Promise((resolve, reject) => {
+      if (failure) {
+        reject(failure);
+        return;
+      }
+      const id = nextId++;
+      const timer = setTimeout(() => {
+        waiting.delete(id);
+        reject(new Error(`MCP server did not answer ${method} within ${RPC_TIMEOUT_MS} ms.`));
+        fail(`stopped answering (${method} took more than ${RPC_TIMEOUT_MS} ms)`);
+      }, RPC_TIMEOUT_MS);
+      waiting.set(id, { resolve, reject, timer });
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    });
+
+  const handleLine = (line) => {
+    let message;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      fail(`wrote something other than JSON to stdout: ${line.slice(0, 200)}`);
+      return;
+    }
+    const pending = waiting.get(message.id);
+    if (pending) {
+      waiting.delete(message.id);
+      clearTimeout(pending.timer);
+      pending.resolve(message);
+    }
+  };
+
+  let buffer = "";
+  child.stdout.on("data", (chunk) => {
+    buffer += chunk;
+    for (let end = buffer.indexOf("\n"); end >= 0; end = buffer.indexOf("\n")) {
+      const line = buffer.slice(0, end);
+      buffer = buffer.slice(end + 1);
+      if (line.trim()) {
+        handleLine(line);
+      }
+    }
+  });
+
+  const call = async (args) => {
+    const { result, error } = await rpc("tools/call", { name: "update_gde_activity", arguments: args });
+    assert.ok(result, `the tool call returned a protocol error: ${JSON.stringify(error)}`);
+    return { isError: result.isError === true, text: result.content[0].text };
+  };
+
+  const preview = async (activityId, data) => {
+    const result = await call({ activityId, data });
+    assert.equal(result.isError, false, result.text);
+    const id = result.text.match(/confirmationId: (\S+)/)?.[1];
+    assert.ok(id, "the preview returns a confirmationId");
+    return { ...result, id };
+  };
+
+  return {
+    rpc,
+    call,
+    preview,
+    initialize: () =>
+      rpc("initialize", {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "test", version: "0" },
+      }),
+    stop: () => {
+      stopping = true;
+      for (const { timer } of waiting.values()) {
+        clearTimeout(timer);
+      }
+      child.kill("SIGKILL");
+    },
+  };
 };
 
-const call = async (args) => {
-  const { result, error } = await rpc("tools/call", { name: "update_gde_activity", arguments: args });
-  assert.ok(result, `the tool call returned a protocol error: ${JSON.stringify(error)}`);
-  return { isError: result.isError === true, text: result.content[0].text };
-};
-
-const preview = async (activityId, data) => {
-  const result = await call({ activityId, data });
-  assert.equal(result.isError, false, result.text);
-  const id = result.text.match(/confirmationId: (\S+)/)?.[1];
-  assert.ok(id, "the preview returns a confirmationId");
-  return { ...result, id };
-};
+const rpc = (...args) => mainServer.rpc(...args);
+const call = (...args) => mainServer.call(...args);
+const preview = (...args) => mainServer.preview(...args);
 
 before(async () => {
   assert.ok(existsSync(entry), `Server build not found at ${entry}. Run npm run build first.`);
@@ -135,6 +196,14 @@ before(async () => {
         const page = Number(url.searchParams.get("page") ?? 0);
         // The content is read on arrival, so a held response carries the old state
         const content = JSON.stringify({ content: page === 0 ? filler : page === 1 ? secondPage() : [] });
+        if (listMode === "hang") {
+          return;
+        }
+        if (listMode === "stall") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.write('{"content":[');
+          return;
+        }
         if (heldListPage === page) {
           heldListPage = undefined;
           releaseHeld = () => send(200, content);
@@ -147,6 +216,14 @@ before(async () => {
         patches.push({ url: req.url, body, authorization: req.headers.authorization });
         if (patchMode === "drop") {
           req.socket.destroy();
+          return;
+        }
+        if (patchMode === "hang") {
+          return;
+        }
+        if (patchMode === "stall") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.write('{"updated":');
           return;
         }
         const respond = () =>
@@ -164,48 +241,14 @@ before(async () => {
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 
-  child = spawn(process.execPath, [entry], {
-    env: {
-      PATH: process.env.PATH,
-      ADVOCU_ACCESS_TOKEN: "test-token",
-      ADVOCU_API_URL: `http://127.0.0.1:${server.address().port}`,
-    },
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  child.on("error", (error) => failServer(`could not be started (${error.message})`));
-  child.on("exit", (code, signal) => {
-    if (!stopping) {
-      failServer(`exited early (code ${code}, signal ${signal})`);
-    }
-  });
-  child.stdin.on("error", (error) => failServer(`closed its input (${error.message})`));
-  child.stderr.on("data", (chunk) => {
-    serverStderr += chunk;
-  });
-  let buffer = "";
-  child.stdout.on("data", (chunk) => {
-    buffer += chunk;
-    for (let end = buffer.indexOf("\n"); end >= 0; end = buffer.indexOf("\n")) {
-      const line = buffer.slice(0, end);
-      buffer = buffer.slice(end + 1);
-      if (line.trim()) {
-        handleServerLine(line);
-      }
-    }
-  });
-  await rpc("initialize", {
-    protocolVersion: "2024-11-05",
-    capabilities: {},
-    clientInfo: { name: "test", version: "0" },
-  });
+  mainServer = startServer();
+  timeoutServer = startServer({ ADVOCU_REQUEST_TIMEOUT_MS: String(REQUEST_TIMEOUT_MS) });
+  await Promise.all([mainServer.initialize(), timeoutServer.initialize()]);
 });
 
 after(() => {
-  stopping = true;
-  for (const { timer } of waiting.values()) {
-    clearTimeout(timer);
-  }
-  child?.kill("SIGKILL");
+  mainServer?.stop();
+  timeoutServer?.stop();
   server?.closeAllConnections();
   server?.close();
 });
@@ -222,6 +265,7 @@ beforeEach(() => {
   patchStatus = 200;
   patchMode = "normal";
   listStatus = 200;
+  listMode = "normal";
   heldPatchActivity = undefined;
   heldListPage = undefined;
   releaseHeld = undefined;
@@ -556,10 +600,10 @@ test("other activities are not blocked during an update", async () => {
   assert.equal(patches.length, 2);
 });
 
-const applyAgain = async () => {
+const applyAgain = async (client = mainServer) => {
   const data = { title: "Second try" };
-  const { id } = await preview("article-1", data);
-  const result = await call({ activityId: "article-1", data, apply: true, confirmationId: id });
+  const { id } = await client.preview("article-1", data);
+  const result = await client.call({ activityId: "article-1", data, apply: true, confirmationId: id });
   assert.equal(result.isError, false, result.text);
 };
 
@@ -595,14 +639,63 @@ test("the lock is released when the connection fails", async () => {
   const data = { title: "New title" };
   const { id } = await preview("article-1", data);
   patchMode = "drop";
-  const { error } = await rpc("tools/call", {
-    name: "update_gde_activity",
-    arguments: { activityId: "article-1", data, apply: true, confirmationId: id },
-  });
-  assert.ok(error, "a dropped connection is reported as an error");
+  const result = await call({ activityId: "article-1", data, apply: true, confirmationId: id });
+  assert.equal(result.isError, true);
+  assert.match(result.text, /result of this update is unknown/);
+  assert.equal(patches.length, 1);
   patchMode = "normal";
   await applyAgain();
+  assert.equal(patches.length, 2);
 });
+
+for (const [name, mode] of [
+  ["no response", "hang"],
+  ["a stalled response body", "stall"],
+]) {
+  test(`a preview with ${name} times out and returns no id`, async () => {
+    listMode = mode;
+    const result = await timeoutServer.call({ activityId: "article-1", data: { title: "New title" } });
+    assert.equal(result.isError, true);
+    assert.match(result.text, /timed out/);
+    assert.doesNotMatch(result.text, /confirmationId:/);
+    assert.equal(patches.length, 0);
+  });
+
+  test(`a re-read with ${name} times out, sends nothing and releases the lock`, async () => {
+    const data = { title: "New title" };
+    const { id } = await timeoutServer.preview("article-1", data);
+    listMode = mode;
+    const args = { activityId: "article-1", data, apply: true, confirmationId: id };
+    const result = await timeoutServer.call(args);
+    assert.equal(result.isError, true);
+    assert.match(result.text, /Nothing was sent/);
+    assert.match(result.text, /timed out/);
+    assert.equal(patches.length, 0);
+
+    listMode = "normal";
+    assert.equal((await timeoutServer.call(args)).isError, true, "the used id stays used");
+    assert.equal(patches.length, 0);
+    await applyAgain(timeoutServer);
+  });
+
+  test(`a PATCH with ${name} reports an unknown result, is not resent and releases the lock`, async () => {
+    const data = { title: "New title" };
+    const { id } = await timeoutServer.preview("article-1", data);
+    patchMode = mode;
+    const result = await timeoutServer.call({ activityId: "article-1", data, apply: true, confirmationId: id });
+    assert.equal(result.isError, true);
+    assert.match(result.text, /result of this update is unknown/);
+    assert.match(result.text, /list_gde_activities/);
+    assert.doesNotMatch(result.text, /Nothing was sent/);
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(patches.length, 1, "the request is not sent again");
+
+    patchMode = "normal";
+    await applyAgain(timeoutServer);
+    assert.equal(patches.length, 2);
+  });
+}
 
 for (const status of [400, 401, 404, 429, 500]) {
   test(`HTTP ${status} from PATCH is a failed call and needs a new preview`, async () => {

@@ -145,6 +145,7 @@ Each tool has a JSON schema with validation rules (minLength, maxLength, pattern
 #### GDE Configuration (optional - for GDE functionality)
 - `ADVOCU_ACCESS_TOKEN` - API access token for GDE/Advocu authentication
 - `ADVOCU_API_URL` (optional) - Override the default GDE API base URL
+- `ADVOCU_REQUEST_TIMEOUT_MS` (optional) - Timeout for `GET /activities` and `PATCH /activities/{activityId}` (default 30000)
 
 #### MVP Configuration (optional - for MVP functionality)
 - `MVP_ACCESS_TOKEN` - Bearer token for MVP API authentication (get this from browser DevTools when logged into mvp.microsoft.com)

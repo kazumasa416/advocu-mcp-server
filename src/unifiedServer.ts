@@ -69,6 +69,10 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
+function isTimeoutError(error: unknown): boolean {
+  return error instanceof Error && error.name === "TimeoutError";
+}
+
 /** Names the top-level and data fields that differ between two reads of an activity. */
 function listChangedActivityFields(before: Activity, after: Activity): string[] {
   const changed = (["type", "submissionDate", "updatedDate", "archiveDate"] as const).filter(
@@ -175,6 +179,7 @@ export class UnifiedActivityReportingServer {
   // GDE configuration
   private readonly gdeAccessToken: string | null;
   private readonly gdeBaseUrl: string;
+  private readonly gdeRequestTimeoutMs: number;
   private readonly gdeEnabled: boolean;
   private readonly pendingGDEUpdates = new Map<string, PendingGDEUpdate>();
   private readonly gdeActivitiesBeingUpdated = new Set<string>();
@@ -227,6 +232,8 @@ export class UnifiedActivityReportingServer {
     // Setup GDE
     this.gdeAccessToken = process.env.ADVOCU_ACCESS_TOKEN || null;
     this.gdeBaseUrl = process.env.ADVOCU_API_URL ?? "https://api.advocu.com/personal-api/v1/gde";
+    const requestTimeoutMs = Number(process.env.ADVOCU_REQUEST_TIMEOUT_MS);
+    this.gdeRequestTimeoutMs = requestTimeoutMs > 0 ? requestTimeoutMs : 30000;
     this.gdeEnabled = !!this.gdeAccessToken;
 
     if (!this.gdeEnabled) {
@@ -834,6 +841,7 @@ export class UnifiedActivityReportingServer {
    */
   private async fetchGDEActivitiesPage(
     query: ActivityListQuery,
+    signal: AbortSignal,
   ): Promise<{ result: ActivityListResponse } | { errorMessage: string }> {
     const params = new URLSearchParams();
     for (const key of ["from", "to", "updatedAfter", "page", "size"] as const) {
@@ -845,12 +853,14 @@ export class UnifiedActivityReportingServer {
     const queryString = params.toString();
     const url = `${this.gdeBaseUrl}/activities${queryString ? `?${queryString}` : ""}`;
 
+    // The signal also covers reading the response body
     const response = await fetch(url, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.gdeAccessToken}`,
       },
+      signal,
     });
 
     if (!response.ok) {
@@ -892,7 +902,7 @@ export class UnifiedActivityReportingServer {
 
   private async listGDEActivities(query: ActivityListQuery) {
     try {
-      const page = await this.fetchGDEActivitiesPage(query);
+      const page = await this.fetchGDEActivitiesPage(query, AbortSignal.timeout(this.gdeRequestTimeoutMs));
       if ("errorMessage" in page) {
         return this.gdeErrorResult(page.errorMessage);
       }
@@ -927,11 +937,14 @@ export class UnifiedActivityReportingServer {
    * The API has no endpoint for reading a single activity, so it is looked up
    * by walking the list. The page limit guards against an API that ignores the
    * page parameter; 20 pages of 100 is far more than one person's activities.
+   * One timeout covers the whole walk, which limits how long an update can hold
+   * its lock.
    */
   private async findGDEActivity(activityId: string): Promise<{ activity: Activity } | { errorMessage: string }> {
     const size = 100;
+    const signal = AbortSignal.timeout(this.gdeRequestTimeoutMs);
     for (let page = 0; page < 20; page++) {
-      const fetched = await this.fetchGDEActivitiesPage({ page, size });
+      const fetched = await this.fetchGDEActivitiesPage({ page, size }, signal);
       if ("errorMessage" in fetched) {
         return fetched;
       }
@@ -978,6 +991,7 @@ export class UnifiedActivityReportingServer {
     const generation = this.gdeUpdateGenerations.get(activityId) ?? 0;
 
     let pending: PendingGDEUpdate | undefined;
+    let sending = false;
     if (apply === true) {
       pending = typeof confirmationId === "string" ? this.pendingGDEUpdates.get(confirmationId) : undefined;
       if (!pending) {
@@ -1076,6 +1090,7 @@ export class UnifiedActivityReportingServer {
         };
       }
 
+      sending = true;
       const response = await fetch(`${this.gdeBaseUrl}/activities/${encodeURIComponent(activityId)}`, {
         method: "PATCH",
         headers: {
@@ -1083,6 +1098,7 @@ export class UnifiedActivityReportingServer {
           Authorization: `Bearer ${this.gdeAccessToken}`,
         },
         body: pending.body,
+        signal: AbortSignal.timeout(this.gdeRequestTimeoutMs),
       });
       const body = await response.text();
 
@@ -1114,6 +1130,18 @@ export class UnifiedActivityReportingServer {
     } catch (error) {
       if (error instanceof McpError) throw error;
       const errorMsg = this.getErrorMessage(error);
+      // The request may have reached the API, so this must not claim that
+      // nothing changed, and it is never sent again automatically.
+      if (sending) {
+        return this.gdeErrorResult(
+          `⚠️ The result of this update is unknown (${errorMsg}). It may or may not have been applied, and it was not sent again. Use list_gde_activities to check the activity, then call without apply to preview any further change.`,
+        );
+      }
+      if (isTimeoutError(error)) {
+        return this.gdeErrorResult(
+          `⏱️ Nothing was sent. Reading the activity timed out after ${this.gdeRequestTimeoutMs} ms. Call without apply to preview again.`,
+        );
+      }
       throw new McpError(ErrorCode.InternalError, `❌ Failed to update GDE activity:\n\n${errorMsg}`);
     } finally {
       if (pending) {

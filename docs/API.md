@@ -499,6 +499,11 @@ Nothing is sent when:
 
 A preview returns no id while the activity is being updated, or if an update started while the preview was reading it.
 
+Each request has a timeout: 30 seconds by default, set in milliseconds with `ADVOCU_REQUEST_TIMEOUT_MS`. It covers the
+response body as well as the headers, and one timeout covers the whole walk of `GET /activities`. If a read times out,
+nothing is sent. If the `PATCH` times out or its connection fails, the result is unknown: the request may have been
+applied, so the tool says so, does not send it again, and asks to check the activity with `list_gde_activities`.
+
 These checks cover one server process. The reference documents no conditional update, so a change made elsewhere (the
 portal, another server process) in the short time between that last read and the `PATCH` cannot be detected, and the
 `PATCH` would overwrite the fields it sends.
