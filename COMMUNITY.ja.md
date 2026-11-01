@@ -24,7 +24,7 @@
   - タグのうち `Cloud - BigQuery ` と `Cloud - Conversational Data Analytics ` は、公式資料では末尾に空白が付いています。空白なしでも受け付けられるかは確認していません。
   - `country` に入れる値の形式（例：`Japan`）。公式資料には文字数の制限しか書かれていません。
   - この版の下書き登録ツールは、実際の Advocu API ではなく模擬 API で確認しています（エラー時の扱い、引数を省略したときの送信内容、送り先）。
-  - 一覧取得は、配布者のアカウントで実際の API から読み取れることを確認しています。
+  - 一覧取得は、配布者のアカウントで実際の API から読み取れることを、Claude Desktop 上でも確認しています。
 
 ## 動作確認した環境
 
@@ -33,7 +33,7 @@
 | OS | macOS 15.8.1（Apple Silicon） | Windows、Linux、Intel Mac |
 | Node.js | v24.22.1（全手順）、v20.20.2（`npm run build:clean` と `npm run verify:build` のみ） | v18、v22、v20 での `npm ci` |
 | npm | 11.19.1（`npm ci`、ビルド、起動確認）、10.9.9（`npm ci --dry-run` のみ） | 上記以外 |
-| MCP クライアント | この版は MCP の stdio 接続で起動・ツール一覧・一覧取得を確認。Claude Desktop（macOS）では以前の版の利用実績あり | この版での Claude Desktop 上の動作、Claude Code ほかのクライアント |
+| MCP クライアント | この版は MCP の stdio 接続で起動・ツール一覧・一覧取得を確認。Claude Desktop（macOS）でも、この版の一覧取得を確認。下書き登録は以前の版での利用実績のみ | この版の Claude Desktop 上での下書き登録、Claude Code CLI ほかのクライアント |
 
 ## 導入手順
 
@@ -62,7 +62,7 @@ npm run verify:build
 
 ### 3. Claude Desktop に登録する
 
-Claude Desktop の設定ファイルを開きます。
+**先に Claude Desktop を完全に終了します**（macOS は Cmd+Q）。起動したまま編集すると、変更が元に戻ることがあります。終了したら、設定ファイルをテキストエディターで開きます。
 
 - macOS：`~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows：`%APPDATA%\Claude\claude_desktop_config.json`（未確認）
@@ -91,7 +91,9 @@ Claude Desktop の設定ファイルを開きます。
 
 ### 4. 再起動して確認する
 
-Claude Desktop を完全に終了し（macOS は Cmd+Q）、起動し直します。会話で「Advocu の登録済み活動を 1 ページ見せて」などと頼み、`list_gde_activities` が使えれば導入完了です。
+設定ファイルを保存してから Claude Desktop を起動します。新しい会話で「`list_gde_activities` で Advocu の登録済み活動を 1 ページ見せて」などと頼み、ツールが使えれば導入完了です。
+
+ツールが見つからない場合は、Claude Desktop を完全に終了し、設定ファイルに `advocu` の項目と正しいパスが残っているかを確認してください。
 
 ## 更新・切り戻し
 
@@ -111,7 +113,7 @@ npm run verify:build
 
 ## アンインストール
 
-設定ファイルから `advocu` の項目を削除して Claude Desktop を再起動し、取得したフォルダを削除します。
+Claude Desktop を完全に終了してから設定ファイルの `advocu` の項目を削除し、Claude Desktop を起動し直します。そのあと、取得したフォルダを削除します。
 
 ## ライセンス
 
