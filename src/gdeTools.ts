@@ -7,7 +7,6 @@
 
 import {
   ContentType,
-  Country,
   EventFormat,
   InteractionFormat,
   InteractionType,
@@ -37,17 +36,27 @@ export const GDE_TOOL_ENDPOINTS: Record<string, string> = {
 };
 
 /**
- * Shared schema for the optional tags field. Advocu changes its tag list over
- * time, so the known values are listed in the description instead of an enum
- * and validation is left to the API.
+ * Shared schema for the optional tags field. The API reference defines tags as
+ * an enum, but Advocu changes the list over time, so the known values are listed
+ * in the description instead of an enum and validation is left to the API.
+ * Values are quoted so that the trailing spaces some of them carry stay visible.
  */
 const TAGS_SCHEMA = {
   type: "array",
   items: { type: "string" },
-  description: `Tags (optional). Use the exact tag names shown in the Advocu portal, e.g.: ${Object.values(Tag).join(", ")}`,
+  description: `Tags (optional). Use the exact values, including any trailing spaces: ${Object.values(Tag)
+    .map((tag) => JSON.stringify(tag))
+    .join(", ")}`,
   minItems: 0,
 };
 
+/**
+ * Every field is optional in the Advocu draft endpoints: drafts can be saved
+ * incomplete and finished in the portal before submission, so no tool marks
+ * fields as required. Some fields are only accepted for certain event formats
+ * (see country and inPersonAttendees).
+ * Reference: https://app.advocu.com/settings/integrations/personal-api
+ */
 export const GDE_TOOLS: GDEToolDefinition[] = [
   {
     name: "submit_content_creation",
@@ -86,7 +95,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
               description: "How many people read your content?",
             },
           },
-          required: ["readers"],
         },
         activityUrl: {
           type: "string",
@@ -104,7 +112,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           description: "Do you want to make this activity private? (optional)",
         },
       },
-      required: ["title", "description", "activityDate", "contentType", "metrics", "activityUrl"],
     },
   },
   {
@@ -139,7 +146,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
               description: "How many people attended your session in total?",
             },
           },
-          required: ["attendees"],
         },
         eventFormat: {
           type: "string",
@@ -148,13 +154,14 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
         },
         country: {
           type: "string",
-          enum: Object.values(Country),
-          description: "Country (required if eventFormat is In-Person or Hybrid)",
+          minLength: 1,
+          maxLength: 100,
+          description: "Country where the event took place. Accepted only when eventFormat is In-Person or Hybrid",
         },
         inPersonAttendees: {
           type: "integer",
           minimum: 0,
-          description: "In-person attendees (required if eventFormat is Hybrid or In-Person)",
+          description: "Out of all, how many people attended in person? Accepted only when eventFormat is Hybrid",
         },
         activityUrl: {
           type: "string",
@@ -172,7 +179,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           description: "Do you want to make this activity private? (optional)",
         },
       },
-      required: ["title", "description", "activityDate", "metrics", "eventFormat", "activityUrl"],
     },
   },
   {
@@ -207,7 +213,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
               description: "How many people have been trained?",
             },
           },
-          required: ["attendees"],
         },
         eventFormat: {
           type: "string",
@@ -216,13 +221,14 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
         },
         country: {
           type: "string",
-          enum: Object.values(Country),
-          description: "Country (required if eventFormat is In-Person or Hybrid)",
+          minLength: 1,
+          maxLength: 100,
+          description: "Country where the event took place. Accepted only when eventFormat is In-Person or Hybrid",
         },
         inPersonAttendees: {
           type: "integer",
           minimum: 0,
-          description: "In-person attendees (required if eventFormat is Hybrid or In-Person)",
+          description: "Out of all, how many people attended in person? Accepted only when eventFormat is Hybrid",
         },
         activityUrl: {
           type: "string",
@@ -240,7 +246,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           description: "Do you want to make this activity private? (optional)",
         },
       },
-      required: ["title", "description", "activityDate", "metrics", "eventFormat", "activityUrl"],
     },
   },
   {
@@ -275,7 +280,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
               description: "How many people have been mentored in total?",
             },
           },
-          required: ["attendees"],
         },
         eventFormat: {
           type: "string",
@@ -284,13 +288,14 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
         },
         country: {
           type: "string",
-          enum: Object.values(Country),
-          description: "Country (required if eventFormat is In-Person or Hybrid)",
+          minLength: 1,
+          maxLength: 100,
+          description: "Country where the event took place. Accepted only when eventFormat is In-Person or Hybrid",
         },
         inPersonAttendees: {
           type: "integer",
           minimum: 0,
-          description: "In-person attendees (required if eventFormat is Hybrid or In-Person)",
+          description: "Out of all, how many people attended in person? Accepted only when eventFormat is Hybrid",
         },
         activityUrl: {
           type: "string",
@@ -308,7 +313,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           description: "Do you want to make this activity private? (optional)",
         },
       },
-      required: ["title", "description", "activityDate", "metrics", "eventFormat", "activityUrl"],
     },
   },
   {
@@ -353,7 +357,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
               description: "Time spent (in minutes)",
             },
           },
-          required: ["timeSpent"],
         },
         additionalInfo: {
           type: "string",
@@ -365,7 +368,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           description: "Do you want to make this activity private? (optional)",
         },
       },
-      required: ["title", "description", "activityDate", "contentType", "productDescription", "metrics"],
     },
   },
   {
@@ -410,7 +412,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
               description: "Time spent (in minutes)",
             },
           },
-          required: ["timeSpent"],
         },
         additionalInfo: {
           type: "string",
@@ -427,7 +428,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           description: "Do you want to make this activity private? (optional)",
         },
       },
-      required: ["title", "description", "activityDate", "format", "interactionType", "metrics"],
     },
   },
   {
@@ -446,11 +446,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           type: "string",
           description: "Description",
           maxLength: 2000,
-        },
-        activityDate: {
-          type: "string",
-          pattern: "^\\d{4}-\\d{2}-\\d{2}$",
-          description: "Activity Date (YYYY-MM-DD format)",
         },
         whyIsSignificant: {
           type: "string",
@@ -478,7 +473,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
               description: "Impact (views, reads, attendees, etc.)",
             },
           },
-          required: ["impact"],
         },
         additionalInfo: {
           type: "string",
@@ -490,15 +484,6 @@ export const GDE_TOOLS: GDEToolDefinition[] = [
           description: "Do you want to make this activity private? (optional)",
         },
       },
-      required: [
-        "title",
-        "description",
-        "activityDate",
-        "whyIsSignificant",
-        "significanceType",
-        "activityUrl",
-        "metrics",
-      ],
     },
   },
 ];

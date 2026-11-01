@@ -6,8 +6,10 @@
 /**
  * Enum for activity tags
  * Used to categorize activities across different Google technologies and initiatives
- * Mirrors the portal's tag picker as of 2026-11 (86 values). Advocu adds and removes tags
- * over time, so this list is informational and is not enforced in the tool schemas.
+ * Mirrors the 86 values the Advocu Personal API reference lists for draft tags
+ * (https://app.advocu.com/settings/integrations/personal-api, checked 2026-11-01).
+ * Advocu adds and removes tags over time, so this list is informational and is
+ * not enforced in the tool schemas.
  */
 export enum Tag {
   AI = "AI",
@@ -39,13 +41,15 @@ export enum Tag {
   CLOUD_AGENT_SANDBOX = "Cloud - Agent Sandbox",
   CLOUD_AGENT_SUBSTRATE = "Cloud - Agent Substrate",
   CLOUD_ALLOYDB = "Cloud - AlloyDB",
-  CLOUD_BIGQUERY = "Cloud - BigQuery",
+  // Trailing space is intentional: the API reference lists this value with it.
+  CLOUD_BIGQUERY = "Cloud - BigQuery ",
   CLOUD_CLOUD_DEVELOPER_AGENT_PLUGIN = "Cloud - Cloud Developer Agent Plugin",
   CLOUD_CLOUD_FIRESTORE = "Cloud - Cloud Firestore",
   CLOUD_CLOUD_RUN = "Cloud - Cloud Run",
   CLOUD_CLOUD_SQL = "Cloud - Cloud SQL",
   CLOUD_CODEMENDER = "Cloud - CodeMender",
-  CLOUD_CONVERSATIONAL_DATA_ANALYTICS = "Cloud - Conversational Data Analytics",
+  // Trailing space is intentional: the API reference lists this value with it.
+  CLOUD_CONVERSATIONAL_DATA_ANALYTICS = "Cloud - Conversational Data Analytics ",
   CLOUD_DATA_AGENT_KIT = "Cloud - Data Agent Kit",
   CLOUD_GEMINI_PLATFORM = "Cloud - Gemini Platform",
   CLOUD_GKE = "Cloud - GKE",

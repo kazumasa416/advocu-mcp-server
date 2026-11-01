@@ -11,13 +11,15 @@ import type { ActivityDraftBase } from "./ActivityDraftBase.js";
  * Used for early access programs and product feedback sessions
  */
 export interface ProductFeedbackDraft extends ActivityDraftBase {
+  /** Date when the activity took place (YYYY-MM-DD format) */
+  activityDate?: string;
   /** Type of product feedback content */
-  contentType: ProductFeedbackContentType;
+  contentType?: ProductFeedbackContentType;
   /** Description of what product the feedback was about */
-  productDescription: string;
+  productDescription?: string;
   /** Metrics related to time investment */
-  metrics: {
+  metrics?: {
     /** Time spent providing feedback (in minutes) */
-    timeSpent: number;
+    timeSpent?: number;
   };
 }

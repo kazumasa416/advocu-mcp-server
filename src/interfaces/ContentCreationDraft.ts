@@ -11,13 +11,15 @@ import type { ActivityDraftBase } from "./ActivityDraftBase.js";
  * Used for articles, books, videos, demos, and other published content
  */
 export interface ContentCreationDraft extends ActivityDraftBase {
+  /** Date when the activity took place (YYYY-MM-DD format) */
+  activityDate?: string;
   /** Type of content created */
-  contentType: ContentType;
+  contentType?: ContentType;
   /** Metrics related to the content's reach */
-  metrics: {
+  metrics?: {
     /** Number of people who read/viewed the content */
-    readers: number;
+    readers?: number;
   };
   /** URL link to the published content */
-  activityUrl: string;
+  activityUrl?: string;
 }

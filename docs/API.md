@@ -255,6 +255,9 @@ Origin: https://mvp.microsoft.com
 
 # Google GDE API (Advocu)
 
+> **Source**: [Advocu Personal API reference](https://app.advocu.com/settings/integrations/personal-api)
+> (sign in to Advocu and open the Google Developer Experts workspace first). Last checked: 2026-11-01.
+
 ## Base URL
 ```
 https://api.advocu.com/personal-api/v1/gde
@@ -262,150 +265,166 @@ https://api.advocu.com/personal-api/v1/gde
 
 ## Authentication
 ```
+Content-Type: application/json
 Authorization: Bearer <token>
 ```
 
+Generate the token on the Personal API page linked above.
+
 ## Rate Limit
-30 requests per minute
+30 requests per minute per IP address. Requests over the limit are rejected with HTTP 429.
 
 ---
 
+## Common Rules
+
+- **Every field is optional.** Drafts can be saved incomplete and finished in the Advocu portal before submission.
+- **Accepted if**: some fields are only accepted for certain values of another field (for example `country` only for
+  `In-Person` or `Hybrid` events). This is a condition for sending the field, not a requirement to send it.
+- **Dates** use the pattern `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` (YYYY-MM-DD).
+- **URLs** use the pattern `^https?:\/\/(www\.)?.*$`.
+- **Response**: every draft endpoint returns `{ "id": "<id of created activity draft>" }`.
+
 ## Tags
 
-The `tags` field accepts the tag names shown in the Advocu portal's tag picker (e.g. `Google Cloud`, `Cloud - BigQuery`, `AI - Gemini`).
-As of 2026-11 the portal offers 86 tags; the full list is kept in [`src/types/Tag.ts`](../src/types/Tag.ts).
-Advocu adds and removes tags over time, so the MCP tools do not enforce this list and leave validation to the API.
-Check the portal for the current options.
+`tags` is an array whose items must be one of the 86 values listed in the reference (same list for all 7 draft
+endpoints). The full list is kept in [`src/types/Tag.ts`](../src/types/Tag.ts).
+
+- Values must match exactly. Two values carry a trailing space in the reference: `"Cloud - BigQuery "` and
+  `"Cloud - Conversational Data Analytics "`.
+- Advocu adds and removes tags over time, so the MCP tools do not enforce this list and leave validation to the API.
 
 ---
 
 ## POST /activity-drafts/content-creation
 
-Creates a published content draft.
-
-| Name            | Type    | Description                                | Restrictions                                                 |
-| --------------- | ------- | ------------------------------------------ | ------------------------------------------------------------ |
-| contentType     | string  | Content type                               | enum (7 values)                                              |
-| title           | string  | What was the title?                        | min length 3, max length 200                                 |
-| description     | string  | What was it about?                         | max length 2000                                              |
-| tags            | array   | Tags                                       | enum (see [Tags](#tags)), min items 0                               |
-| metrics.readers | integer | How many people read your content?         | minimum 1                                                    |
-| activityDate    | string  | Date published                             | pattern YYYY-MM-DD                                           |
-| activityUrl     | string  | Link to Content                            | max length 500, pattern https?://([www.)?.*](http://www.)/?.*) |
-| additionalInfo  | string  | Additional information                     | max length 2000                                              |
-| private         | boolean | Do you want to make this activity private? | -                                                            |
+| Name            | Type    | Description                                | Accepted if | Restrictions                         |
+| --------------- | ------- | ------------------------------------------ | ----------- | ------------------------------------ |
+| contentType     | string  | Content type                               | -           | enum (7 values)                      |
+| title           | string  | What was the title?                        | -           | min length 3, max length 200         |
+| description     | string  | What was it about?                         | -           | max length 2000                      |
+| tags            | array   | Tags                                       | -           | enum (see [Tags](#tags)), min items 0 |
+| metrics.readers | integer | How many people read your content?         | -           | minimum 1                            |
+| activityDate    | string  | Date published                             | -           | date pattern                         |
+| activityUrl     | string  | Link to Content                            | -           | max length 500, URL pattern          |
+| additionalInfo  | string  | Additional information                     | -           | max length 2000                      |
+| private         | boolean | Do you want to make this activity private? | -           | -                                    |
 
 ------
 
 ## POST /activity-drafts/public-speaking
 
-Records a talk, conference, or public presentation.
-
-| Name              | Type    | Description                                     | Restrictions                                                 |
-| ----------------- | ------- | ----------------------------------------------- | ------------------------------------------------------------ |
-| title             | string  | What was the title of your talk?                | min length 3, max length 200                                 |
-| description       | string  | What was it about?                              | max length 2000                                              |
-| tags              | array   | Tags                                            | enum (see [Tags](#tags)), min items 0                               |
-| metrics.attendees | integer | How many people attended your session in total? | minimum 1                                                    |
-| eventFormat       | string  | Select event format                             | enum (3 values)                                              |
-| country           | string  | Country                                         | enum (251 values), if eventFormat is In-Person or Hybrid     |
-| inPersonAttendees | integer | In-person attendees (if applicable)             | minimum 0, if eventFormat is Hybrid or In-Person             |
-| activityDate      | string  | Date of your talk                               | pattern YYYY-MM-DD                                           |
-| activityUrl       | string  | Event link or relevant URL                      | max length 500, pattern https?://([www.)?.*](http://www.)/?.*) |
-| additionalInfo    | string  | Additional information                          | max length 2000                                              |
-| private           | boolean | Do you want to make this activity private?      | -                                                            |
+| Name              | Type    | Description                                                   | Accepted if                     | Restrictions                         |
+| ----------------- | ------- | ------------------------------------------------------------- | ------------------------------- | ------------------------------------ |
+| title             | string  | What was the title of your talk?                              | -                               | min length 3, max length 200         |
+| description       | string  | What was it about?                                            | -                               | max length 2000                      |
+| tags              | array   | Tags                                                          | -                               | enum (see [Tags](#tags)), min items 0 |
+| metrics.attendees | integer | How many people attended your session in total?               | -                               | minimum 1                            |
+| eventFormat       | string  | Select event format                                           | -                               | enum (3 values)                      |
+| country           | string  | Country                                                       | eventFormat is In-Person or Hybrid | min length 1, max length 100      |
+| inPersonAttendees | integer | Out of all, how many people attended your session in-person? | eventFormat is Hybrid           | minimum 0                            |
+| activityDate      | string  | Date of your talk                                             | -                               | date pattern                         |
+| activityUrl       | string  | Event link (gdg.community.dev URL for GDG events) or other relevant link | -                    | max length 500, URL pattern          |
+| additionalInfo    | string  | Additional information                                        | -                               | max length 2000                      |
+| private           | boolean | Do you want to make this activity private?                    | -                               | -                                    |
 
 ------
 
 ## POST /activity-drafts/workshop
 
-Records a training workshop.
-
-| Name              | Type    | Description                                 | Restrictions                                                 |
-| ----------------- | ------- | ------------------------------------------- | ------------------------------------------------------------ |
-| title             | string  | What was the name of your workshop session? | min length 3, max length 200                                 |
-| description       | string  | What was it about?                          | max length 2000                                              |
-| tags              | array   | Tags                                        | enum (see [Tags](#tags)), min items 0                               |
-| metrics.attendees | integer | How many people have been trained?          | minimum 1                                                    |
-| eventFormat       | string  | Select event format                         | enum (3 values)                                              |
-| country           | string  | Country                                     | enum (251 values), if eventFormat is In-Person or Hybrid     |
-| inPersonAttendees | integer | In-person attendees (if applicable)         | minimum 0, if eventFormat is Hybrid or In-Person             |
-| activityDate      | string  | Date of your workshop                       | pattern YYYY-MM-DD                                           |
-| activityUrl       | string  | Workshop/event link                         | max length 500, pattern https?://([www.)?.*](http://www.)/?.*) |
-| additionalInfo    | string  | Additional information                      | max length 2000                                              |
-| private           | boolean | Do you want to make this activity private?  | -                                                            |
+| Name              | Type    | Description                                                   | Accepted if                     | Restrictions                         |
+| ----------------- | ------- | ------------------------------------------------------------- | ------------------------------- | ------------------------------------ |
+| title             | string  | What was the name of your workshop session?                   | -                               | min length 3, max length 200         |
+| description       | string  | What was it about?                                            | -                               | max length 2000                      |
+| tags              | array   | Tags                                                          | -                               | enum (see [Tags](#tags)), min items 0 |
+| metrics.attendees | integer | How many people have been trained?                            | -                               | minimum 1                            |
+| eventFormat       | string  | Select event format                                           | -                               | enum (3 values)                      |
+| country           | string  | Country                                                       | eventFormat is In-Person or Hybrid | min length 1, max length 100      |
+| inPersonAttendees | integer | Out of all, how many people attended your session in-person? | eventFormat is Hybrid           | minimum 0                            |
+| activityDate      | string  | Date of your workshop                                         | -                               | date pattern                         |
+| activityUrl       | string  | Event link (gdg.community.dev URL for GDG events) or other relevant link | -                    | max length 500, URL pattern          |
+| additionalInfo    | string  | Additional information                                        | -                               | max length 2000                      |
+| private           | boolean | Do you want to make this activity private?                    | -                               | -                                    |
 
 ------
 
 ## POST /activity-drafts/mentoring
 
-Records a mentoring session.
-
-| Name              | Type    | Description                                  | Restrictions                                                 |
-| ----------------- | ------- | -------------------------------------------- | ------------------------------------------------------------ |
-| title             | string  | What was the name of your mentoring session? | min length 3, max length 200                                 |
-| description       | string  | What was it about?                           | max length 2000                                              |
-| tags              | array   | Tags                                         | enum (see [Tags](#tags)), min items 0                               |
-| metrics.attendees | integer | How many people have been mentored in total? | minimum 1                                                    |
-| eventFormat       | string  | Select event format                          | enum (3 values)                                              |
-| country           | string  | Country                                      | enum (251 values), if eventFormat is In-Person or Hybrid     |
-| inPersonAttendees | integer | In-person attendees (if applicable)          | minimum 0, if eventFormat is Hybrid or In-Person             |
-| activityDate      | string  | Date of your mentoring session               | pattern YYYY-MM-DD                                           |
-| activityUrl       | string  | Event or relevant link                       | max length 500, pattern https?://([www.)?.*](http://www.)/?.*) |
-| additionalInfo    | string  | Additional information                       | max length 2000                                              |
-| private           | boolean | Do you want to make this activity private?   | -                                                            |
+| Name              | Type    | Description                                                   | Accepted if                     | Restrictions                         |
+| ----------------- | ------- | ------------------------------------------------------------- | ------------------------------- | ------------------------------------ |
+| title             | string  | What was the name of your mentoring session?                  | -                               | min length 3, max length 200         |
+| description       | string  | What was it about?                                            | -                               | max length 2000                      |
+| tags              | array   | Tags                                                          | -                               | enum (see [Tags](#tags)), min items 0 |
+| metrics.attendees | integer | How many people have been mentored in total?                  | -                               | minimum 1                            |
+| eventFormat       | string  | Select event format                                           | -                               | enum (3 values)                      |
+| country           | string  | Country                                                       | eventFormat is In-Person or Hybrid | min length 1, max length 100      |
+| inPersonAttendees | integer | Out of all, how many people attended your session in-person? | eventFormat is Hybrid           | minimum 0                            |
+| activityDate      | string  | Date of your mentoring session                                | -                               | date pattern                         |
+| activityUrl       | string  | Event link (e.g. program website, gdg.community.dev event URL) or other relevant link | -       | max length 500, URL pattern          |
+| additionalInfo    | string  | Additional information                                        | -                               | max length 2000                      |
+| private           | boolean | Do you want to make this activity private?                    | -                               | -                                    |
 
 ------
 
 ## POST /activity-drafts/product-feedback-given
 
-Records product feedback.
-
-| Name               | Type    | Description                                | Restrictions                   |
-| ------------------ | ------- | ------------------------------------------ | ------------------------------ |
-| title              | string  | Title                                      | min length 3, max length 200   |
-| description        | string  | Description                                | max length 2000                |
-| contentType        | string  | Content type                               | enum (2 values)                |
-| productDescription | string  | What product was it about?                 | max length 500                 |
-| tags               | array   | Tags                                       | enum (see [Tags](#tags)), min items 0 |
-| metrics.timeSpent  | integer | Time spent (in minutes)                    | minimum 1                      |
-| activityDate       | string  | Participation Date                         | pattern YYYY-MM-DD             |
-| additionalInfo     | string  | Additional information                     | max length 2000                |
-| private            | boolean | Do you want to make this activity private? | -                              |
+| Name               | Type    | Description                                | Accepted if | Restrictions                         |
+| ------------------ | ------- | ------------------------------------------ | ----------- | ------------------------------------ |
+| title              | string  | Title                                      | -           | min length 3, max length 200         |
+| description        | string  | Description                                | -           | max length 2000                      |
+| contentType        | string  | Content type                               | -           | enum (2 values)                      |
+| productDescription | string  | What product was it about?                 | -           | max length 500                       |
+| tags               | array   | Tags                                       | -           | enum (see [Tags](#tags)), min items 0 |
+| metrics.timeSpent  | integer | Time spent (in minutes)                    | -           | minimum 1                            |
+| activityDate       | string  | Participation Date                         | -           | date pattern                         |
+| additionalInfo     | string  | Additional information                     | -           | max length 2000                      |
+| private            | boolean | Do you want to make this activity private? | -           | -                                    |
 
 ------
 
 ## POST /activity-drafts/interaction-with-googlers
 
-Records a direct interaction with Google personnel.
-
-| Name              | Type    | Description                                | Restrictions                   |
-| ----------------- | ------- | ------------------------------------------ | ------------------------------ |
-| title             | string  | Title                                      | min length 3, max length 200   |
-| description       | string  | Description                                | max length 2000                |
-| format            | string  | Format                                     | enum (8 values)                |
-| interactionType   | string  | Interaction Type                           | enum (6 values)                |
-| tags              | array   | Tags                                       | enum (see [Tags](#tags)), min items 0 |
-| metrics.timeSpent | integer | Time spent (in minutes)                    | minimum 1                      |
-| activityDate      | string  | Interaction Date                           | pattern YYYY-MM-DD             |
-| additionalInfo    | string  | Additional information                     | max length 2000                |
-| additionalLinks   | string  | Additional links                           | max length 2000                |
-| private           | boolean | Do you want to make this activity private? | -                              |
+| Name              | Type    | Description                                | Accepted if | Restrictions                         |
+| ----------------- | ------- | ------------------------------------------ | ----------- | ------------------------------------ |
+| title             | string  | Title                                      | -           | min length 3, max length 200         |
+| description       | string  | Description                                | -           | max length 2000                      |
+| format            | string  | Format                                     | -           | enum (8 values)                      |
+| interactionType   | string  | Interaction Type                           | -           | enum (6 values)                      |
+| tags              | array   | Tags                                       | -           | enum (see [Tags](#tags)), min items 0 |
+| metrics.timeSpent | integer | Time spent (in minutes)                    | -           | minimum 1                            |
+| activityDate      | string  | Interaction Date                           | -           | date pattern                         |
+| additionalInfo    | string  | Additional information                     | -           | max length 2000                      |
+| additionalLinks   | string  | Additional links                           | -           | max length 2000                      |
+| private           | boolean | Do you want to make this activity private? | -           | -                                    |
 
 ------
 
-## POST /activity-drafts/storiesName
+## POST /activity-drafts/stories
 
-Records a story or significant experience.
+This endpoint has no `activityDate` field.
 
-| Name             | Type    | Description                                | Restrictions                                                 |
-| ---------------- | ------- | ------------------------------------------ | ------------------------------------------------------------ |
-| title            | string  | Title of the story                         | min length 3, max length 200                                 |
-| description      | string  | Description                                | max length 2000                                              |
-| whyIsSignificant | string  | Why is it significant                      | max length 2000                                              |
-| significanceType | string  | Significance type                          | enum (6 values)                                              |
-| activityUrl      | string  | Link                                       | max length 500, pattern https?://([www.)?.*](http://www.)/?.*) |
-| tags             | array   | Tags                                       | enum (see [Tags](#tags)), min items 0                               |
-| metrics.impact   | integer | Impact (views, reads, attendees, etc.)     | minimum 1                                                    |
-| additionalInfo   | string  | Additional information                     | max length 2000                                              |
-| private          | boolean | Do you want to make this activity private? | -                                                            |
+| Name             | Type    | Description                                                    | Accepted if | Restrictions                         |
+| ---------------- | ------- | -------------------------------------------------------------- | ----------- | ------------------------------------ |
+| title            | string  | Title of the story                                             | -           | min length 3, max length 200         |
+| description      | string  | Description                                                    | -           | max length 2000                      |
+| whyIsSignificant | string  | Tell us more about it and why it is significant                | -           | max length 2000                      |
+| significanceType | string  | Significance type                                              | -           | enum (6 values)                      |
+| activityUrl      | string  | Link                                                           | -           | max length 500, URL pattern          |
+| tags             | array   | Tags                                                           | -           | enum (see [Tags](#tags)), min items 0 |
+| metrics.impact   | integer | What was your impact in views, reads, attendees, etc.?         | -           | minimum 1                            |
+| additionalInfo   | string  | Additional information                                         | -           | max length 2000                      |
+| private          | boolean | Do you want to make this activity private?                     | -           | -                                    |
+
+------
+
+## Not Yet Supported by the MCP Tools
+
+The reference also documents the following, which this server does not implement yet:
+
+- `GET /activities` — pageable list of submitted activities, sorted by submission date (ascending). Query parameters:
+  `from`, `to` (submission date range), `updatedAfter`, `page` (default 0), `size` (1-100, default 10).
+- `PATCH /activities/{activityId}` — update an existing activity.
+- The list response can contain two activity types that have no draft endpoint: `github-repository` and
+  `youtube-video`. A future list tool needs to handle them alongside the 7 draft types.
+- Activities returned by the list/update endpoints accept a wider set of 331 tags (including retired ones), and include
+  fields such as `city`, `countryIso` and `imageUrl` that the draft endpoints do not accept.

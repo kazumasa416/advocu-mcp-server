@@ -12,14 +12,16 @@ import type { ActivityDraftBase } from "./ActivityDraftBase.js";
  * Used for direct interactions with Google team members
  */
 export interface GooglerInteractionDraft extends ActivityDraftBase {
+  /** Date when the activity took place (YYYY-MM-DD format) */
+  activityDate?: string;
   /** Format of the interaction */
-  format: InteractionFormat;
+  format?: InteractionFormat;
   /** Type of interaction with Google personnel */
-  interactionType: InteractionType;
+  interactionType?: InteractionType;
   /** Metrics related to time investment */
-  metrics: {
+  metrics?: {
     /** Time spent in the interaction (in minutes) */
-    timeSpent: number;
+    timeSpent?: number;
   };
   /** Optional additional links related to the interaction */
   additionalLinks?: string;

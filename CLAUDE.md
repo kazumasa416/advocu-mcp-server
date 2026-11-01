@@ -64,7 +64,7 @@ npm run postrelease       # Pushes tags and publishes to npm
 The codebase uses a type-safe, inheritance-based structure for activity drafts:
 
 #### GDE Activity Types (in `src/interfaces/`)
-- **ActivityDraftBase** - Base interface with common properties (title, description, activityDate, tags, additionalInfo, private)
+- **ActivityDraftBase** - Base interface with common properties (title, description, tags, additionalInfo, private). All draft fields are optional, matching the Advocu Personal API; `activityDate` lives on each draft type except `StoryDraft`
 - **Specific activity interfaces** extend the base and add unique properties:
   - `ContentCreationDraft` - For articles, videos, podcasts, etc.
   - `PublicSpeakingDraft` - For talks and presentations

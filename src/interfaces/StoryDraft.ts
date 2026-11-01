@@ -12,14 +12,14 @@ import type { ActivityDraftBase } from "./ActivityDraftBase.js";
  */
 export interface StoryDraft extends ActivityDraftBase {
   /** Explanation of why this story is significant */
-  whyIsSignificant: string;
+  whyIsSignificant?: string;
   /** Type of significance or impact category */
-  significanceType: SignificanceType;
+  significanceType?: SignificanceType;
   /** URL link to the story or related content */
-  activityUrl: string;
+  activityUrl?: string;
   /** Metrics related to impact */
-  metrics: {
+  metrics?: {
     /** Impact measurement (views, reads, attendees, etc.) */
-    impact: number;
+    impact?: number;
   };
 }
